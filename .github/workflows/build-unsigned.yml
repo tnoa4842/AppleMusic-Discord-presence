@@ -1,1 +1,51 @@
+name: Build unsigned IPA
 
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    env:
+      DISCORD_APP_ID: ${{ secrets.DISCORD_APP_ID }}
+      BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare Discord SDK
+        run: bash scripts/prepare_discord_sdk.sh
+
+      - name: Generate config
+        run: bash scripts/generate_config.sh
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: |
+          xcodegen generate
+
+      - name: Build unsigned app
+        run: |
+          xcodebuild \
+            -project AppleMusicDiscordPresence.xcodeproj \
+            -scheme AppleMusicDiscordPresence \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            PRODUCT_BUNDLE_IDENTIFIER="${BUNDLE_ID}" \
+            build
+
+      - name: Package IPA
+        run: bash scripts/make_unsigned_ipa.sh
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppleMusicDiscordPresence-unsigned
+          path: AppleMusicDiscordPresence-unsigned.ipa
