@@ -21,29 +21,42 @@ if [[ ! -f "$C_HEADER" ]]; then
 fi
 
 rm -rf Vendor
-
 mkdir -p Vendor/include
 mkdir -p Vendor/Frameworks
 
 TMP="$(mktemp -d)"
-
 unzip -q "$ZIP" -d "$TMP"
 
-FRAMEWORK="$(find "$TMP" -type d -name 'discord_partner_sdk.framework' -print -quit)"
+echo "=== ZIP contents ==="
+find "$TMP" -maxdepth 6 -print
+
+FRAMEWORK="$(find "$TMP" -type d -name '*.framework' -print -quit)"
 
 if [[ -z "$FRAMEWORK" ]]; then
-  echo "::error::discord_partner_sdk.framework not found in ZIP"
-  find "$TMP" -maxdepth 5 -print
+  echo "::error::No .framework found in ZIP"
   exit 1
 fi
 
-cp -R "$FRAMEWORK" Vendor/Frameworks/discord_partner_sdk.framework
+echo "=== Found framework ==="
+echo "$FRAMEWORK"
+
+echo "=== Framework contents ==="
+find "$FRAMEWORK" -maxdepth 4 -print
+
+cp -R "$FRAMEWORK" Vendor/Frameworks/
 
 cp "$HEADER" Vendor/include/discordpp.h
 cp "$C_HEADER" Vendor/include/cdiscord.h
 
-echo "=== Discord SDK prepared ==="
-find Vendor -maxdepth 5 -print
+echo "=== Copied Vendor structure ==="
+find Vendor -maxdepth 6 -print
 
-echo "=== Framework contents ==="
-find Vendor/Frameworks/discord_partner_sdk.framework -maxdepth 3 -print
+echo "=== Framework Info.plist ==="
+if [[ -f "Vendor/Frameworks/$(basename "$FRAMEWORK")/Info.plist" ]]; then
+  plutil -p "Vendor/Frameworks/$(basename "$FRAMEWORK")/Info.plist"
+fi
+
+echo "=== Framework binary candidates ==="
+find "Vendor/Frameworks/$(basename "$FRAMEWORK")" -maxdepth 1 -type f -print
+
+echo "Discord SDK prepared."
