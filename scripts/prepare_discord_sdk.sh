@@ -25,22 +25,27 @@ mkdir -p Vendor/include
 mkdir -p Vendor/Frameworks
 
 TMP="$(mktemp -d)"
+
 unzip -q "$ZIP" -d "$TMP"
 
 echo "=== ZIP contents ==="
 find "$TMP" -maxdepth 6 -print
 
-FRAMEWORK="$(find "$TMP" -type d -name '*.framework' -print -quit)"
+# __MACOSX を除外して、本物の framework だけ探す
+FRAMEWORK="$(find "$TMP" \
+  -type d \
+  -name 'discord_partner_sdk.framework' \
+  ! -path '*/__MACOSX/*' \
+  -print -quit)"
 
 if [[ -z "$FRAMEWORK" ]]; then
-  echo "::error::No .framework found inside ZIP"
+  echo "::error::Real discord_partner_sdk.framework not found"
   exit 1
 fi
 
-echo "=== Original framework ==="
+echo "=== Real framework found ==="
 echo "$FRAMEWORK"
 
-# 名前を必ず discord_partner_sdk.framework に統一
 DEST="Vendor/Frameworks/discord_partner_sdk.framework"
 
 cp -R "$FRAMEWORK" "$DEST"
@@ -48,66 +53,26 @@ cp -R "$FRAMEWORK" "$DEST"
 cp "$HEADER" Vendor/include/discordpp.h
 cp "$C_HEADER" Vendor/include/cdiscord.h
 
-echo "=== Framework before normalization ==="
-find "$DEST" -maxdepth 3 -print
-
-# Info.plistから本来の実行バイナリ名を取得
-EXECUTABLE=""
-
-if [[ -f "$DEST/Info.plist" ]]; then
-  EXECUTABLE="$(/usr/libexec/PlistBuddy \
-    -c 'Print :CFBundleExecutable' \
-    "$DEST/Info.plist" 2>/dev/null || true)"
-fi
-
-echo "CFBundleExecutable: $EXECUTABLE"
-
-# framework内部の実体バイナリを探す
-if [[ -n "$EXECUTABLE" && -f "$DEST/$EXECUTABLE" ]]; then
-  echo "Found framework executable: $DEST/$EXECUTABLE"
-
-  # -framework discord_partner_sdk が探す名前へ統一
-  if [[ "$EXECUTABLE" != "discord_partner_sdk" ]]; then
-    mv "$DEST/$EXECUTABLE" "$DEST/discord_partner_sdk"
-
-    /usr/libexec/PlistBuddy \
-      -c 'Set :CFBundleExecutable discord_partner_sdk' \
-      "$DEST/Info.plist"
-  fi
-fi
-
-# 上で見つからなかった場合、framework直下のMach-Oを探す
-if [[ ! -f "$DEST/discord_partner_sdk" ]]; then
-  echo "Searching for Mach-O binary..."
-
-  while IFS= read -r FILE; do
-    if file "$FILE" | grep -q "Mach-O"; then
-      echo "Found Mach-O: $FILE"
-      cp "$FILE" "$DEST/discord_partner_sdk"
-
-      if [[ -f "$DEST/Info.plist" ]]; then
-        /usr/libexec/PlistBuddy \
-          -c 'Set :CFBundleExecutable discord_partner_sdk' \
-          "$DEST/Info.plist" || true
-      fi
-
-      break
-    fi
-  done < <(find "$DEST" -maxdepth 1 -type f)
-fi
+echo "=== Framework contents ==="
+find "$DEST" -maxdepth 4 -print
 
 if [[ ! -f "$DEST/discord_partner_sdk" ]]; then
-  echo "::error::Framework binary could not be found"
-  find "$DEST" -maxdepth 4 -print
+  echo "::error::discord_partner_sdk binary not found"
   exit 1
 fi
 
-chmod +x "$DEST/discord_partner_sdk" || true
+if [[ ! -f "$DEST/Info.plist" ]]; then
+  echo "::error::Info.plist not found"
+  exit 1
+fi
 
-echo "=== FINAL Vendor structure ==="
-find Vendor -maxdepth 5 -print
-
-echo "=== Final framework binary ==="
+echo "=== Framework binary ==="
 file "$DEST/discord_partner_sdk"
+
+echo "=== Info.plist ==="
+plutil -p "$DEST/Info.plist"
+
+echo "=== Final Vendor structure ==="
+find Vendor -maxdepth 5 -print
 
 echo "Discord SDK prepared successfully."
