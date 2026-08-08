@@ -3,6 +3,7 @@ set -euo pipefail
 
 ZIP="VendorUpload/discord_partner_sdk.zip"
 HEADER="VendorUpload/discordpp.h"
+C_HEADER="VendorUpload/cdiscord.h"
 
 if [[ ! -f "$ZIP" ]]; then
   echo "::error::discord_partner_sdk.zip not found"
@@ -14,11 +15,18 @@ if [[ ! -f "$HEADER" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$C_HEADER" ]]; then
+  echo "::error::cdiscord.h not found"
+  exit 1
+fi
+
 rm -rf Vendor
+
 mkdir -p Vendor/include
 mkdir -p Vendor/discord_partner_sdk.xcframework/ios-arm64
 
 TMP="$(mktemp -d)"
+
 unzip -q "$ZIP" -d "$TMP"
 
 FRAMEWORK="$(find "$TMP" -type d -name 'discord_partner_sdk.framework' -print -quit)"
@@ -33,6 +41,7 @@ cp -R "$FRAMEWORK" \
   Vendor/discord_partner_sdk.xcframework/ios-arm64/
 
 cp "$HEADER" Vendor/include/discordpp.h
+cp "$C_HEADER" Vendor/include/cdiscord.h
 
 cat > Vendor/discord_partner_sdk.xcframework/Info.plist <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -44,18 +53,23 @@ cat > Vendor/discord_partner_sdk.xcframework/Info.plist <<'PLIST'
         <dict>
             <key>LibraryIdentifier</key>
             <string>ios-arm64</string>
+
             <key>LibraryPath</key>
             <string>discord_partner_sdk.framework</string>
+
             <key>SupportedArchitectures</key>
             <array>
                 <string>arm64</string>
             </array>
+
             <key>SupportedPlatform</key>
             <string>ios</string>
         </dict>
     </array>
+
     <key>CFBundlePackageType</key>
     <string>XFWK</string>
+
     <key>XCFrameworkFormatVersion</key>
     <string>1.0</string>
 </dict>
