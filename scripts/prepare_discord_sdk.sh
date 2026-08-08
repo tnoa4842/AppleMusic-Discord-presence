@@ -33,30 +33,81 @@ find "$TMP" -maxdepth 6 -print
 FRAMEWORK="$(find "$TMP" -type d -name '*.framework' -print -quit)"
 
 if [[ -z "$FRAMEWORK" ]]; then
-  echo "::error::No .framework found in ZIP"
+  echo "::error::No .framework found inside ZIP"
   exit 1
 fi
 
-echo "=== Found framework ==="
+echo "=== Original framework ==="
 echo "$FRAMEWORK"
 
-echo "=== Framework contents ==="
-find "$FRAMEWORK" -maxdepth 4 -print
+# 名前を必ず discord_partner_sdk.framework に統一
+DEST="Vendor/Frameworks/discord_partner_sdk.framework"
 
-cp -R "$FRAMEWORK" Vendor/Frameworks/
+cp -R "$FRAMEWORK" "$DEST"
 
 cp "$HEADER" Vendor/include/discordpp.h
 cp "$C_HEADER" Vendor/include/cdiscord.h
 
-echo "=== Copied Vendor structure ==="
-find Vendor -maxdepth 6 -print
+echo "=== Framework before normalization ==="
+find "$DEST" -maxdepth 3 -print
 
-echo "=== Framework Info.plist ==="
-if [[ -f "Vendor/Frameworks/$(basename "$FRAMEWORK")/Info.plist" ]]; then
-  plutil -p "Vendor/Frameworks/$(basename "$FRAMEWORK")/Info.plist"
+# Info.plistから本来の実行バイナリ名を取得
+EXECUTABLE=""
+
+if [[ -f "$DEST/Info.plist" ]]; then
+  EXECUTABLE="$(/usr/libexec/PlistBuddy \
+    -c 'Print :CFBundleExecutable' \
+    "$DEST/Info.plist" 2>/dev/null || true)"
 fi
 
-echo "=== Framework binary candidates ==="
-find "Vendor/Frameworks/$(basename "$FRAMEWORK")" -maxdepth 1 -type f -print
+echo "CFBundleExecutable: $EXECUTABLE"
 
-echo "Discord SDK prepared."
+# framework内部の実体バイナリを探す
+if [[ -n "$EXECUTABLE" && -f "$DEST/$EXECUTABLE" ]]; then
+  echo "Found framework executable: $DEST/$EXECUTABLE"
+
+  # -framework discord_partner_sdk が探す名前へ統一
+  if [[ "$EXECUTABLE" != "discord_partner_sdk" ]]; then
+    mv "$DEST/$EXECUTABLE" "$DEST/discord_partner_sdk"
+
+    /usr/libexec/PlistBuddy \
+      -c 'Set :CFBundleExecutable discord_partner_sdk' \
+      "$DEST/Info.plist"
+  fi
+fi
+
+# 上で見つからなかった場合、framework直下のMach-Oを探す
+if [[ ! -f "$DEST/discord_partner_sdk" ]]; then
+  echo "Searching for Mach-O binary..."
+
+  while IFS= read -r FILE; do
+    if file "$FILE" | grep -q "Mach-O"; then
+      echo "Found Mach-O: $FILE"
+      cp "$FILE" "$DEST/discord_partner_sdk"
+
+      if [[ -f "$DEST/Info.plist" ]]; then
+        /usr/libexec/PlistBuddy \
+          -c 'Set :CFBundleExecutable discord_partner_sdk' \
+          "$DEST/Info.plist" || true
+      fi
+
+      break
+    fi
+  done < <(find "$DEST" -maxdepth 1 -type f)
+fi
+
+if [[ ! -f "$DEST/discord_partner_sdk" ]]; then
+  echo "::error::Framework binary could not be found"
+  find "$DEST" -maxdepth 4 -print
+  exit 1
+fi
+
+chmod +x "$DEST/discord_partner_sdk" || true
+
+echo "=== FINAL Vendor structure ==="
+find Vendor -maxdepth 5 -print
+
+echo "=== Final framework binary ==="
+file "$DEST/discord_partner_sdk"
+
+echo "Discord SDK prepared successfully."
