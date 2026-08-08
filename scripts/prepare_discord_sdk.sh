@@ -23,7 +23,7 @@ fi
 rm -rf Vendor
 
 mkdir -p Vendor/include
-mkdir -p Vendor/discord_partner_sdk.xcframework/ios-arm64
+mkdir -p Vendor/Frameworks
 
 TMP="$(mktemp -d)"
 
@@ -33,48 +33,17 @@ FRAMEWORK="$(find "$TMP" -type d -name 'discord_partner_sdk.framework' -print -q
 
 if [[ -z "$FRAMEWORK" ]]; then
   echo "::error::discord_partner_sdk.framework not found in ZIP"
-  find "$TMP" -maxdepth 4 -print
+  find "$TMP" -maxdepth 5 -print
   exit 1
 fi
 
-cp -R "$FRAMEWORK" \
-  Vendor/discord_partner_sdk.xcframework/ios-arm64/
+cp -R "$FRAMEWORK" Vendor/Frameworks/discord_partner_sdk.framework
 
 cp "$HEADER" Vendor/include/discordpp.h
 cp "$C_HEADER" Vendor/include/cdiscord.h
 
-cat > Vendor/discord_partner_sdk.xcframework/Info.plist <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>AvailableLibraries</key>
-    <array>
-        <dict>
-            <key>LibraryIdentifier</key>
-            <string>ios-arm64</string>
+echo "=== Discord SDK prepared ==="
+find Vendor -maxdepth 5 -print
 
-            <key>LibraryPath</key>
-            <string>discord_partner_sdk.framework</string>
-
-            <key>SupportedArchitectures</key>
-            <array>
-                <string>arm64</string>
-            </array>
-
-            <key>SupportedPlatform</key>
-            <string>ios</string>
-        </dict>
-    </array>
-
-    <key>CFBundlePackageType</key>
-    <string>XFWK</string>
-
-    <key>XCFrameworkFormatVersion</key>
-    <string>1.0</string>
-</dict>
-</plist>
-PLIST
-
-echo "Discord SDK prepared:"
-find Vendor -maxdepth 4 -print
+echo "=== Framework contents ==="
+find Vendor/Frameworks/discord_partner_sdk.framework -maxdepth 3 -print
