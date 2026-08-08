@@ -23,23 +23,26 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ${BUNDLE_ID}
         DISCORD_APP_ID: ${DISCORD_APP_ID}
+
         SWIFT_OBJC_BRIDGING_HEADER: App/AppleMusicDiscordPresence-Bridging-Header.h
 
         HEADER_SEARCH_PATHS:
+          - "$(inherited)"
           - "$(SRCROOT)/Vendor/include"
 
         FRAMEWORK_SEARCH_PATHS:
           - "$(inherited)"
-          - "$(SRCROOT)/Vendor/discord_partner_sdk.xcframework/ios-arm64"
-          - "$(BUILT_PRODUCTS_DIR)"
+          - "$(SRCROOT)/Vendor/Frameworks"
 
-        OTHER_LDFLAGS:
+        LD_RUNPATH_SEARCH_PATHS:
           - "$(inherited)"
-          - "-lc++"
+          - "@executable_path/Frameworks"
+
+        CLANG_CXX_LANGUAGE_STANDARD: c++20
 
     info:
       path: App/Info.plist
 
     dependencies:
-      - framework: Vendor/discord_partner_sdk.xcframework
+      - framework: Vendor/Frameworks/discord_partner_sdk.framework
         embed: true
