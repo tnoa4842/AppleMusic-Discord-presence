@@ -7,10 +7,18 @@ typedef void (^DiscordStatusChangedBlock)(
     NSString *text
 );
 
+typedef void (^DiscordPresenceResultBlock)(
+    NSString *presenceID,
+    BOOL success
+);
+
 @interface DiscordBridge : NSObject
 
 @property (nonatomic, copy, nullable)
 DiscordStatusChangedBlock onStatusChanged;
+
+@property (nonatomic, copy, nullable)
+DiscordPresenceResultBlock onPresenceResult;
 
 + (instancetype)shared;
 
@@ -26,9 +34,10 @@ DiscordStatusChangedBlock onStatusChanged;
                           album:(NSString *)album
                         songURL:(nullable NSString *)songURL
                      artworkURL:(nullable NSString *)artworkURL
+                     presenceID:(NSString *)presenceID
                  startTimestamp:(int64_t)startTimestamp
                    endTimestamp:(int64_t)endTimestamp
-    NS_SWIFT_NAME(updatePresence(title:artist:album:songURL:artworkURL:startTimestamp:endTimestamp:));
+    NS_SWIFT_NAME(updatePresence(title:artist:album:songURL:artworkURL:presenceID:startTimestamp:endTimestamp:));
 
 - (void)clearPresence;
 
