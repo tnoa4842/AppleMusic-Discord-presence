@@ -28,17 +28,7 @@ DiscordStatusChangedBlock onStatusChanged;
                      artworkURL:(nullable NSString *)artworkURL
                  startTimestamp:(int64_t)startTimestamp
                    endTimestamp:(int64_t)endTimestamp
-    NS_SWIFT_NAME(
-        updatePresence(
-            title:
-            artist:
-            album:
-            songURL:
-            artworkURL:
-            startTimestamp:
-            endTimestamp:
-        )
-    );
+    NS_SWIFT_NAME(updatePresence(title:artist:album:songURL:artworkURL:startTimestamp:endTimestamp:));
 
 - (void)clearPresence;
 
