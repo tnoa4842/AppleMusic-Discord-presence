@@ -1,45 +1,127 @@
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject private var model: PresenceViewModel
+    @ObservedObject var model: PresenceViewModel
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Apple Music") {
-                    LabeledContent("曲", value: model.trackTitle)
-                    LabeledContent("アーティスト", value: model.artist)
-                    LabeledContent("再生", value: model.musicStatus)
-                }
+            ScrollView {
+                VStack(spacing: 20) {
 
-                Section("Discord") {
-                    LabeledContent("状態", value: model.discordStatus)
+                    // MARK: - Apple Music
 
-                    Button("Discord に接続") {
-                        model.connectDiscord()
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Apple Music")
+                            .font(.headline)
+
+                        HStack {
+                            Text("状態")
+                                .foregroundStyle(.secondary)
+
+                            Spacer()
+
+                            Text(model.musicStatus)
+                        }
+
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(model.trackTitle)
+                                .font(.title3)
+                                .fontWeight(.semibold)
+
+                            if !model.artist.isEmpty {
+                                Text(model.artist)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .padding()
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(.regularMaterial)
+                    )
 
-                    Button("今の曲を送信") {
-                        model.pushCurrentTrack()
+                    // MARK: - Discord
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Discord")
+                            .font(.headline)
+
+                        HStack {
+                            Text("接続状態")
+                                .foregroundStyle(.secondary)
+
+                            Spacer()
+
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(
+                                        model.isDiscordReady
+                                        ? Color.green
+                                        : Color.orange
+                                    )
+                                    .frame(width: 8, height: 8)
+
+                                Text(model.discordStatus)
+                            }
+                        }
+
+                        Button {
+                            model.connectDiscord()
+                        } label: {
+                            Text(
+                                model.isDiscordReady
+                                ? "Discord 接続済み"
+                                : "Discord に接続"
+                            )
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(model.isDiscordReady)
+
+                        Button {
+                            model.forceRefresh()
+                        } label: {
+                            Label(
+                                "今の曲をDiscordへ反映",
+                                systemImage: "arrow.clockwise"
+                            )
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!model.isDiscordReady)
                     }
-                    .disabled(!model.isDiscordReady)
+                    .padding()
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(.regularMaterial)
+                    )
 
-                    Button("Presence を消す", role: .destructive) {
-                        model.clearPresence()
+                    // MARK: - 自動更新
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Toggle(
+                            "自動更新",
+                            isOn: $model.autoUpdate
+                        )
+
+                        Text(
+                            "Apple Musicの曲変更を検出して、Discordの表示を自動更新します。"
+                        )
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                     }
-                    .disabled(!model.isDiscordReady)
+                    .padding()
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(.regularMaterial)
+                    )
                 }
-
-                Section {
-                    Toggle("曲変更を自動反映", isOn: $model.autoUpdate)
-                } footer: {
-                    Text("iOS がこのアプリを完全に停止・サスペンドした間は、曲変更を即時反映できない場合があります。アプリ復帰時に再同期します。")
-                }
+                .padding()
             }
-            .navigationTitle("Music → Discord")
-        }
-        .task {
-            await model.start()
+            .navigationTitle("Music Presence")
         }
     }
 }
