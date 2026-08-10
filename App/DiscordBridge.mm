@@ -1,6 +1,5 @@
 #import "DiscordBridge.h"
-
-@import Security;
+#import <Security/Security.h>
 
 #define DISCORDPP_IMPLEMENTATION
 #include "discordpp.h"
@@ -1477,14 +1476,38 @@ static void DeleteTokenPayload(
             // MARK: Refresh success
 
             /*
-             万一Discord側が
-             新refreshTokenを空で返した場合だけ
-             古い物を保持。
-             */
-            if (refreshToken.empty()) {
+             DiscordのRefreshでは
+             新しいaccess/refresh tokenが返る。
 
-                refreshToken =
-                    oldRefreshToken;
+             古いtokenは無効になる。
+             */
+            if (accessToken.empty() ||
+                refreshToken.empty()) {
+
+                [selfRef
+                    clearStoredTokens
+                ];
+
+
+                [selfRef
+                    notifyReady:NO
+                    text:
+                        @"Discord 再認証が必要"
+                ];
+
+
+                dispatch_async(
+                    dispatch_get_main_queue(),
+                    ^{
+
+                        [selfRef
+                            beginAuthorization
+                        ];
+                    }
+                );
+
+
+                return;
             }
 
 
