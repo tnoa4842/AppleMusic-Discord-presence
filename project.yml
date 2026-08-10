@@ -42,9 +42,10 @@ targets:
 
     info:
       path: App/Info.plist
-      properties:
-        NSAppleMusicUsageDescription: "Apple Musicの再生中の曲をDiscordのステータスに表示するために使用します。"
 
     dependencies:
       - framework: Vendor/Frameworks/discord_partner_sdk.framework
         embed: true
+
+      - sdk: Security.framework
+        embed: false
