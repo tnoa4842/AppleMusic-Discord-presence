@@ -9,14 +9,9 @@
 #include <string>
 
 
-// MARK: =========================================
-// MARK: Helpers
-// MARK: =========================================
-
 namespace {
 
 struct PendingPresence {
-
     bool valid = false;
 
     std::string title;
@@ -38,7 +33,6 @@ static NSString * const DiscordTokenService =
 static std::string NSStringToString(
     NSString *value
 ) {
-
     if (!value) {
         return "";
     }
@@ -50,16 +44,13 @@ static std::string NSStringToString(
         return "";
     }
 
-    return std::string(
-        utf8
-    );
+    return std::string(utf8);
 }
 
 
 static NSString *StringToNSString(
     const std::string &value
 ) {
-
     NSString *result =
         [NSString stringWithUTF8String:
             value.c_str()
@@ -73,23 +64,19 @@ static std::optional<std::string>
 NSStringToOptionalString(
     NSString *value
 ) {
-
     if (!value ||
         value.length == 0) {
 
         return std::nullopt;
     }
 
-    return NSStringToString(
-        value
-    );
+    return NSStringToString(value);
 }
 
 
 static NSString *TokenAccount(
     uint64_t applicationID
 ) {
-
     return
         [NSString stringWithFormat:
             @"%llu",
@@ -98,27 +85,21 @@ static NSString *TokenAccount(
 }
 
 
-// MARK: =========================================
-// MARK: Keychain
-// MARK: =========================================
+// MARK: - Keychain
+
 
 static NSDictionary *BaseKeychainQuery(
     uint64_t applicationID
 ) {
-
     return @{
-
         (__bridge id)kSecClass:
-            (__bridge id)
-                kSecClassGenericPassword,
+            (__bridge id)kSecClassGenericPassword,
 
         (__bridge id)kSecAttrService:
             DiscordTokenService,
 
         (__bridge id)kSecAttrAccount:
-            TokenAccount(
-                applicationID
-            )
+            TokenAccount(applicationID)
     };
 }
 
@@ -126,38 +107,28 @@ static NSDictionary *BaseKeychainQuery(
 static NSDictionary *LoadTokenPayload(
     uint64_t applicationID
 ) {
-
     NSMutableDictionary *query =
         [
-            BaseKeychainQuery(
-                applicationID
-            )
+            BaseKeychainQuery(applicationID)
             mutableCopy
         ];
-
 
     query[
         (__bridge id)kSecReturnData
     ] = @YES;
 
-
     query[
         (__bridge id)kSecMatchLimit
     ] =
-        (__bridge id)
-            kSecMatchLimitOne;
-
+        (__bridge id)kSecMatchLimitOne;
 
     CFTypeRef result = NULL;
 
-
     OSStatus status =
         SecItemCopyMatching(
-            (__bridge CFDictionaryRef)
-                query,
+            (__bridge CFDictionaryRef)query,
             &result
         );
-
 
     if (status != errSecSuccess ||
         result == NULL) {
@@ -165,19 +136,14 @@ static NSDictionary *LoadTokenPayload(
         return nil;
     }
 
-
     NSData *data =
-        (__bridge_transfer NSData *)
-            result;
-
+        (__bridge_transfer NSData *)result;
 
     if (!data) {
         return nil;
     }
 
-
     NSError *error = nil;
-
 
     id object =
         [NSJSONSerialization
@@ -186,20 +152,16 @@ static NSDictionary *LoadTokenPayload(
             error:&error
         ];
 
-
     if (error ||
         ![
             object
-            isKindOfClass:
-                [NSDictionary class]
+            isKindOfClass:[NSDictionary class]
         ]) {
 
         return nil;
     }
 
-
-    return
-        (NSDictionary *)object;
+    return (NSDictionary *)object;
 }
 
 
@@ -207,34 +169,23 @@ static BOOL SaveTokenPayload(
     uint64_t applicationID,
     NSDictionary *payload
 ) {
-
     NSError *error = nil;
-
 
     NSData *data =
         [NSJSONSerialization
-            dataWithJSONObject:
-                payload
+            dataWithJSONObject:payload
             options:0
             error:&error
         ];
 
-
-    if (error ||
-        !data) {
-
+    if (error || !data) {
         return NO;
     }
 
-
     NSDictionary *baseQuery =
-        BaseKeychainQuery(
-            applicationID
-        );
-
+        BaseKeychainQuery(applicationID);
 
     NSDictionary *attributes = @{
-
         (__bridge id)kSecValueData:
             data,
 
@@ -243,70 +194,46 @@ static BOOL SaveTokenPayload(
                 kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
     };
 
-
     OSStatus status =
         SecItemUpdate(
-            (__bridge CFDictionaryRef)
-                baseQuery,
-
-            (__bridge CFDictionaryRef)
-                attributes
+            (__bridge CFDictionaryRef)baseQuery,
+            (__bridge CFDictionaryRef)attributes
         );
 
-
-    if (status ==
-        errSecItemNotFound) {
+    if (status == errSecItemNotFound) {
 
         NSMutableDictionary *newItem =
-            [
-                baseQuery
-                mutableCopy
-            ];
-
+            [baseQuery mutableCopy];
 
         [
             newItem
-            addEntriesFromDictionary:
-                attributes
+            addEntriesFromDictionary:attributes
         ];
-
 
         status =
             SecItemAdd(
-                (__bridge CFDictionaryRef)
-                    newItem,
+                (__bridge CFDictionaryRef)newItem,
                 NULL
             );
     }
 
-
-    return
-        status == errSecSuccess;
+    return status == errSecSuccess;
 }
 
 
 static void DeleteTokenPayload(
     uint64_t applicationID
 ) {
-
     NSDictionary *query =
-        BaseKeychainQuery(
-            applicationID
-        );
-
+        BaseKeychainQuery(applicationID);
 
     SecItemDelete(
-        (__bridge CFDictionaryRef)
-            query
+        (__bridge CFDictionaryRef)query
     );
 }
 
 } // namespace
 
-
-// MARK: =========================================
-// MARK: Private interface
-// MARK: =========================================
 
 @interface DiscordBridge ()
 
@@ -317,12 +244,9 @@ static void DeleteTokenPayload(
 
 - (void)loadStoredTokensIfNeeded;
 
-- (void)saveTokensWithAccessToken:
-            (NSString *)accessToken
-                    refreshToken:
-            (NSString *)refreshToken
-                       expiresIn:
-            (int32_t)expiresIn;
+- (void)saveTokensWithAccessToken:(NSString *)accessToken
+                     refreshToken:(NSString *)refreshToken
+                        expiresIn:(int32_t)expiresIn;
 
 - (void)clearStoredTokens;
 
@@ -332,8 +256,7 @@ static void DeleteTokenPayload(
 
 - (void)refreshStoredToken;
 
-- (void)scheduleRefreshRetry:
-            (NSTimeInterval)delay;
+- (void)scheduleRefreshRetry:(NSTimeInterval)delay;
 
 - (void)beginAuthorization;
 
@@ -342,47 +265,34 @@ static void DeleteTokenPayload(
 @end
 
 
-// MARK: =========================================
-// MARK: Implementation
-// MARK: =========================================
-
 @implementation DiscordBridge {
 
     std::shared_ptr<discordpp::Client>
         _client;
 
-
     uint64_t
         _applicationID;
-
 
     uint64_t
         _tokensLoadedForApplicationID;
 
-
     BOOL
         _authorizationRunning;
-
 
     BOOL
         _tokenOperationRunning;
 
-
     BOOL
         _ready;
-
 
     std::string
         _accessToken;
 
-
     std::string
         _refreshToken;
 
-
     double
         _accessTokenExpiresAt;
-
 
     PendingPresence
         _pendingPresence;
@@ -391,26 +301,19 @@ static void DeleteTokenPayload(
 
 // MARK: - Singleton
 
+
 + (instancetype)shared {
 
-    static DiscordBridge *instance =
-        nil;
-
-
+    static DiscordBridge *instance = nil;
     static dispatch_once_t onceToken;
-
 
     dispatch_once(
         &onceToken,
         ^{
-
             instance =
-                [[DiscordBridge alloc]
-                    init
-                ];
+                [[DiscordBridge alloc] init];
         }
     );
-
 
     return instance;
 }
@@ -418,58 +321,41 @@ static void DeleteTokenPayload(
 
 // MARK: - Init
 
+
 - (instancetype)init {
 
-    self =
-        [super init];
-
+    self = [super init];
 
     if (self) {
 
-        _applicationID =
-            0;
+        _applicationID = 0;
 
+        _tokensLoadedForApplicationID = 0;
 
-        _tokensLoadedForApplicationID =
-            0;
+        _authorizationRunning = NO;
 
+        _tokenOperationRunning = NO;
 
-        _authorizationRunning =
-            NO;
+        _ready = NO;
 
-
-        _tokenOperationRunning =
-            NO;
-
-
-        _ready =
-            NO;
-
-
-        _accessTokenExpiresAt =
-            0;
+        _accessTokenExpiresAt = 0;
     }
-
 
     return self;
 }
 
 
-// MARK: =========================================
-// MARK: Status
-// MARK: =========================================
+// MARK: - Status
+
 
 - (void)notifyReady:(BOOL)ready
                text:(NSString *)text {
 
-    _ready =
-        ready;
-
+    _ready = ready;
 
     dispatch_async(
         dispatch_get_main_queue(),
         ^{
-
             if (self.onStatusChanged) {
 
                 self.onStatusChanged(
@@ -482,9 +368,8 @@ static void DeleteTokenPayload(
 }
 
 
-// MARK: =========================================
-// MARK: Client
-// MARK: =========================================
+// MARK: - Client
+
 
 - (void)ensureClient {
 
@@ -492,18 +377,14 @@ static void DeleteTokenPayload(
         return;
     }
 
-
     _client =
         std::make_shared<
             discordpp::Client
         >();
 
-
     __weak DiscordBridge *weakSelf =
         self;
 
-
-    // MARK: Connection status
 
     _client->SetStatusChangedCallback(
 
@@ -516,13 +397,12 @@ static void DeleteTokenPayload(
             DiscordBridge *selfRef =
                 weakSelf;
 
-
             if (!selfRef) {
                 return;
             }
 
 
-            // MARK: Ready
+            // Ready
 
             if (
                 status ==
@@ -534,23 +414,20 @@ static void DeleteTokenPayload(
                     text:@"接続済み"
                 ];
 
-
                 dispatch_async(
                     dispatch_get_main_queue(),
                     ^{
-
                         [selfRef
                             sendPendingPresenceIfPossible
                         ];
                     }
                 );
 
-
                 return;
             }
 
 
-            // MARK: Connecting
+            // Connecting
 
             if (
                 status ==
@@ -566,7 +443,7 @@ static void DeleteTokenPayload(
             }
 
 
-            // MARK: Connected
+            // Connected
 
             if (
                 status ==
@@ -582,7 +459,7 @@ static void DeleteTokenPayload(
             }
 
 
-            // MARK: Reconnecting
+            // Reconnecting
 
             if (
                 status ==
@@ -598,7 +475,7 @@ static void DeleteTokenPayload(
             }
 
 
-            // MARK: Disconnecting
+            // Disconnecting
 
             if (
                 status ==
@@ -614,7 +491,7 @@ static void DeleteTokenPayload(
             }
 
 
-            // MARK: HTTP wait
+            // HTTP wait
 
             if (
                 status ==
@@ -630,7 +507,7 @@ static void DeleteTokenPayload(
             }
 
 
-            // MARK: Disconnected
+            // Disconnected
 
             if (
                 status ==
@@ -640,7 +517,6 @@ static void DeleteTokenPayload(
                 NSString *message =
                     @"Discord 切断 / 復旧待ち";
 
-
                 if (
                     error !=
                     discordpp::Client::Error::None
@@ -648,20 +524,16 @@ static void DeleteTokenPayload(
 
                     std::string errorText =
                         discordpp::Client::
-                            ErrorToString(
-                                error
-                            );
-
+                            ErrorToString(error);
 
                     message =
                         [NSString
                             stringWithFormat:
-                            @"Discord 切断 (%s:%d)",
-                            errorText.c_str(),
-                            errorDetail
+                                @"Discord 切断 (%s:%d)",
+                                errorText.c_str(),
+                                errorDetail
                         ];
                 }
-
 
                 [selfRef
                     notifyReady:NO
@@ -669,12 +541,6 @@ static void DeleteTokenPayload(
                 ];
 
 
-                /*
-                 Tokenが無効 / 古い可能性が高い場合。
-
-                 保存済みrefresh tokenから
-                 先に更新を試す。
-                 */
                 if (
                     error ==
                     discordpp::Client::
@@ -687,25 +553,16 @@ static void DeleteTokenPayload(
                     dispatch_async(
                         dispatch_get_main_queue(),
                         ^{
-
                             [selfRef
                                 refreshStoredToken
                             ];
                         }
                     );
 
-
                     return;
                 }
 
 
-                /*
-                 通常の回線瞬断。
-
-                 Discord SDK自身にも
-                 Reconnectingはあるが、
-                 完全Disconnectedまで落ちた場合の保険。
-                 */
                 dispatch_after(
 
                     dispatch_time(
@@ -719,7 +576,6 @@ static void DeleteTokenPayload(
                     dispatch_get_main_queue(),
 
                     ^{
-
                         [selfRef
                             reconnectIfNeeded
                         ];
@@ -730,7 +586,7 @@ static void DeleteTokenPayload(
     );
 
 
-    // MARK: Token expiration
+    // Token expiry
 
     _client->SetTokenExpirationCallback(
 
@@ -739,21 +595,13 @@ static void DeleteTokenPayload(
             DiscordBridge *selfRef =
                 weakSelf;
 
-
             if (!selfRef) {
                 return;
             }
 
-
-            /*
-             Discordが
-             「Tokenの期限が近い」
-             と通知した時点でRefresh。
-             */
             dispatch_async(
                 dispatch_get_main_queue(),
                 ^{
-
                     [selfRef
                         refreshStoredToken
                     ];
@@ -764,9 +612,8 @@ static void DeleteTokenPayload(
 }
 
 
-// MARK: =========================================
-// MARK: Keychain load/save
-// MARK: =========================================
+// MARK: - Keychain Load
+
 
 - (void)loadStoredTokensIfNeeded {
 
@@ -774,89 +621,66 @@ static void DeleteTokenPayload(
         return;
     }
 
-
     if (
         _tokensLoadedForApplicationID ==
         _applicationID
     ) {
-
         return;
     }
 
-
     _tokensLoadedForApplicationID =
         _applicationID;
-
 
     _accessToken.clear();
 
     _refreshToken.clear();
 
-    _accessTokenExpiresAt =
-        0;
-
+    _accessTokenExpiresAt = 0;
 
     NSDictionary *payload =
         LoadTokenPayload(
             _applicationID
         );
 
-
     if (!payload) {
         return;
     }
 
-
     NSString *accessToken =
-        payload[
-            @"accessToken"
-        ];
-
+        payload[@"accessToken"];
 
     NSString *refreshToken =
-        payload[
-            @"refreshToken"
-        ];
-
+        payload[@"refreshToken"];
 
     NSNumber *expiresAt =
-        payload[
-            @"expiresAt"
-        ];
+        payload[@"expiresAt"];
 
 
     if (
         [accessToken
-            isKindOfClass:
-                [NSString class]
+            isKindOfClass:[NSString class]
         ]
     ) {
 
         _accessToken =
-            NSStringToString(
-                accessToken
-            );
+            NSStringToString(accessToken);
     }
 
 
     if (
         [refreshToken
-            isKindOfClass:
-                [NSString class]
+            isKindOfClass:[NSString class]
         ]
     ) {
 
         _refreshToken =
-            NSStringToString(
-                refreshToken
-            );
+            NSStringToString(refreshToken);
     }
 
 
     if (
         [expiresAt
-            isKindOfClass:
-                [NSNumber class]
+            isKindOfClass:[NSNumber class]
         ]
     ) {
 
@@ -866,35 +690,26 @@ static void DeleteTokenPayload(
 }
 
 
-- (void)saveTokensWithAccessToken:
-            (NSString *)accessToken
-                    refreshToken:
-            (NSString *)refreshToken
-                       expiresIn:
-            (int32_t)expiresIn {
+// MARK: - Keychain Save
+
+
+- (void)saveTokensWithAccessToken:(NSString *)accessToken
+                     refreshToken:(NSString *)refreshToken
+                        expiresIn:(int32_t)expiresIn {
 
     if (_applicationID == 0) {
         return;
     }
 
-
     _accessToken =
-        NSStringToString(
-            accessToken
-        );
-
+        NSStringToString(accessToken);
 
     _refreshToken =
-        NSStringToString(
-            refreshToken
-        );
-
+        NSStringToString(refreshToken);
 
     NSTimeInterval now =
-        [
-            NSDate date
-        ].timeIntervalSince1970;
-
+        [NSDate date]
+            .timeIntervalSince1970;
 
     _accessTokenExpiresAt =
         now +
@@ -903,9 +718,7 @@ static void DeleteTokenPayload(
             0
         );
 
-
     NSDictionary *payload = @{
-
         @"accessToken":
             accessToken ?: @"",
 
@@ -913,11 +726,8 @@ static void DeleteTokenPayload(
             refreshToken ?: @"",
 
         @"expiresAt":
-            @(
-                _accessTokenExpiresAt
-            )
+            @(_accessTokenExpiresAt)
     };
-
 
     BOOL saved =
         SaveTokenPayload(
@@ -925,14 +735,15 @@ static void DeleteTokenPayload(
             payload
         );
 
-
     if (!saved) {
-
         NSLog(
             @"Discord token Keychain save failed"
         );
     }
 }
+
+
+// MARK: - Delete Tokens
 
 
 - (void)clearStoredTokens {
@@ -944,19 +755,16 @@ static void DeleteTokenPayload(
         );
     }
 
-
     _accessToken.clear();
 
     _refreshToken.clear();
 
-    _accessTokenExpiresAt =
-        0;
+    _accessTokenExpiresAt = 0;
 }
 
 
-// MARK: =========================================
-// MARK: Token state
-// MARK: =========================================
+// MARK: - Token State
+
 
 - (BOOL)shouldRefreshToken {
 
@@ -964,40 +772,22 @@ static void DeleteTokenPayload(
         return NO;
     }
 
-
-    /*
-     access tokenが無いなら
-     refresh tokenを使う。
-     */
     if (_accessToken.empty()) {
         return YES;
     }
 
-
-    /*
-     有効期限情報が無い場合も
-     refresh可能なら更新する。
-     */
     if (_accessTokenExpiresAt <= 0) {
         return YES;
     }
 
-
     NSTimeInterval now =
-        [
-            NSDate date
-        ].timeIntervalSince1970;
+        [NSDate date]
+            .timeIntervalSince1970;
 
-
-    /*
-     24時間以内に期限切れなら
-     先にRefresh。
-     */
     const double refreshWindow =
         24.0 *
         60.0 *
         60.0;
-
 
     return
         _accessTokenExpiresAt <=
@@ -1005,9 +795,8 @@ static void DeleteTokenPayload(
 }
 
 
-// MARK: =========================================
-// MARK: Start
-// MARK: =========================================
+// MARK: - Start
+
 
 - (void)startWithApplicationID:
             (uint64_t)applicationID {
@@ -1024,10 +813,6 @@ static void DeleteTokenPayload(
     }
 
 
-    /*
-     App IDが変更された場合は
-     Tokenキャッシュを読み直す。
-     */
     if (
         _applicationID !=
         applicationID
@@ -1036,10 +821,8 @@ static void DeleteTokenPayload(
         _applicationID =
             applicationID;
 
-
         _tokensLoadedForApplicationID =
             0;
-
 
         _accessToken.clear();
 
@@ -1050,9 +833,7 @@ static void DeleteTokenPayload(
     }
 
 
-    [self
-        ensureClient
-    ];
+    [self ensureClient];
 
 
     _client->SetApplicationId(
@@ -1060,9 +841,7 @@ static void DeleteTokenPayload(
     );
 
 
-    [self
-        loadStoredTokensIfNeeded
-    ];
+    [self loadStoredTokensIfNeeded];
 
 
     discordpp::Client::Status status =
@@ -1079,20 +858,14 @@ static void DeleteTokenPayload(
             text:@"接続済み"
         ];
 
-
         [self
             sendPendingPresenceIfPossible
         ];
-
 
         return;
     }
 
 
-    /*
-     すでに接続処理中なら
-     余計な操作をしない。
-     */
     if (
         status ==
             discordpp::Client::Status::Connecting
@@ -1123,23 +896,13 @@ static void DeleteTokenPayload(
     }
 
 
-    // MARK: 期限が近い → refresh
+    if ([self shouldRefreshToken]) {
 
-    if (
-        [self
-            shouldRefreshToken
-        ]
-    ) {
-
-        [self
-            refreshStoredToken
-        ];
+        [self refreshStoredToken];
 
         return;
     }
 
-
-    // MARK: KeychainのAccess Token
 
     if (!_accessToken.empty()) {
 
@@ -1151,32 +914,20 @@ static void DeleteTokenPayload(
     }
 
 
-    // MARK: Access無し、Refresh有り
-
     if (!_refreshToken.empty()) {
 
-        [self
-            refreshStoredToken
-        ];
+        [self refreshStoredToken];
 
         return;
     }
 
 
-    /*
-     保存済みTokenが一切無い。
-
-     ここだけDiscord認証画面を開く。
-     */
-    [self
-        beginAuthorization
-    ];
+    [self beginAuthorization];
 }
 
 
-// MARK: =========================================
-// MARK: Restore Access Token
-// MARK: =========================================
+// MARK: - Restore Access Token
+
 
 - (void)applyStoredAccessTokenAndConnect {
 
@@ -1192,8 +943,7 @@ static void DeleteTokenPayload(
     }
 
 
-    _tokenOperationRunning =
-        YES;
+    _tokenOperationRunning = YES;
 
 
     [self
@@ -1224,11 +974,9 @@ static void DeleteTokenPayload(
             DiscordBridge *selfRef =
                 weakSelf;
 
-
             if (!selfRef) {
                 return;
             }
-
 
             selfRef->
                 _tokenOperationRunning =
@@ -1244,10 +992,6 @@ static void DeleteTokenPayload(
                 ];
 
 
-                /*
-                 Access Tokenが駄目なら
-                 Refresh Tokenへ切り替える。
-                 */
                 if (
                     !selfRef->
                         _refreshToken.empty()
@@ -1256,14 +1000,12 @@ static void DeleteTokenPayload(
                     dispatch_async(
                         dispatch_get_main_queue(),
                         ^{
-
                             [selfRef
                                 refreshStoredToken
                             ];
                         }
                     );
                 }
-
 
                 return;
             }
@@ -1287,9 +1029,8 @@ static void DeleteTokenPayload(
 }
 
 
-// MARK: =========================================
-// MARK: Refresh Token
-// MARK: =========================================
+// MARK: - Refresh Token
+
 
 - (void)refreshStoredToken {
 
@@ -1300,27 +1041,21 @@ static void DeleteTokenPayload(
     }
 
 
-    if (_tokenOperationRunning ||
-        _authorizationRunning) {
+    if (
+        _tokenOperationRunning ||
+        _authorizationRunning
+    ) {
 
         return;
     }
 
 
-    [self
-        loadStoredTokensIfNeeded
-    ];
+    [self loadStoredTokensIfNeeded];
 
 
     if (_refreshToken.empty()) {
 
-        /*
-         Refresh Token自体が無い場合のみ
-         OAuthへ戻る。
-         */
-        [self
-            beginAuthorization
-        ];
+        [self beginAuthorization];
 
         return;
     }
@@ -1366,18 +1101,14 @@ static void DeleteTokenPayload(
             DiscordBridge *selfRef =
                 weakSelf;
 
-
             if (!selfRef) {
                 return;
             }
-
 
             selfRef->
                 _tokenOperationRunning =
                 NO;
 
-
-            // MARK: Refresh failed
 
             if (!result.Successful()) {
 
@@ -1387,13 +1118,6 @@ static void DeleteTokenPayload(
                 );
 
 
-                /*
-                 回線問題・Rate Limit等。
-
-                 Tokenを消さない。
-                 OAuth画面にも戻らない。
-                 後で再試行。
-                 */
                 if (result.Retryable()) {
 
                     [selfRef
@@ -1411,7 +1135,6 @@ static void DeleteTokenPayload(
                         delay = 15;
                     }
 
-
                     if (delay > 60) {
                         delay = 60;
                     }
@@ -1422,23 +1145,11 @@ static void DeleteTokenPayload(
                             delay
                     ];
 
-
                     return;
                 }
 
 
-                /*
-                 retry不可。
-
-                 Refresh Token自体が
-                 無効/失効した可能性が高い。
-
-                 この場合だけ保存を消して
-                 再認証する。
-                 */
-                [selfRef
-                    clearStoredTokens
-                ];
+                [selfRef clearStoredTokens];
 
 
                 [selfRef
@@ -1461,32 +1172,22 @@ static void DeleteTokenPayload(
                     dispatch_get_main_queue(),
 
                     ^{
-
                         [selfRef
                             beginAuthorization
                         ];
                     }
                 );
 
-
                 return;
             }
 
 
-            // MARK: Refresh success
+            if (
+                accessToken.empty() ||
+                refreshToken.empty()
+            ) {
 
-            /*
-             DiscordのRefreshでは
-             新しいaccess/refresh tokenが返る。
-
-             古いtokenは無効になる。
-             */
-            if (accessToken.empty() ||
-                refreshToken.empty()) {
-
-                [selfRef
-                    clearStoredTokens
-                ];
+                [selfRef clearStoredTokens];
 
 
                 [selfRef
@@ -1499,13 +1200,11 @@ static void DeleteTokenPayload(
                 dispatch_async(
                     dispatch_get_main_queue(),
                     ^{
-
                         [selfRef
                             beginAuthorization
                         ];
                     }
                 );
-
 
                 return;
             }
@@ -1557,11 +1256,9 @@ static void DeleteTokenPayload(
                     DiscordBridge *self2 =
                         weakSelf;
 
-
                     if (!self2) {
                         return;
                     }
-
 
                     self2->
                         _tokenOperationRunning =
@@ -1588,17 +1285,12 @@ static void DeleteTokenPayload(
 
 
                     discordpp::
-                        Client::Status
-                        status =
+                        Client::Status status =
                             self2->
                                 _client->
                                 GetStatus();
 
 
-                    /*
-                     既にReadyなら
-                     UpdateTokenだけでOK。
-                     */
                     if (
                         status ==
                         discordpp::
@@ -1615,15 +1307,10 @@ static void DeleteTokenPayload(
                             sendPendingPresenceIfPossible
                         ];
 
-
                         return;
                     }
 
 
-                    /*
-                     完全切断中なら
-                     新しいTokenで接続。
-                     */
                     if (
                         status ==
                         discordpp::
@@ -1649,7 +1336,8 @@ static void DeleteTokenPayload(
 }
 
 
-// MARK: - Refresh retry
+// MARK: - Refresh Retry
+
 
 - (void)scheduleRefreshRetry:
             (NSTimeInterval)delay {
@@ -1672,7 +1360,6 @@ static void DeleteTokenPayload(
         dispatch_get_main_queue(),
 
         ^{
-
             [self
                 refreshStoredToken
             ];
@@ -1681,9 +1368,8 @@ static void DeleteTokenPayload(
 }
 
 
-// MARK: =========================================
-// MARK: First Authorization
-// MARK: =========================================
+// MARK: - Initial Authorization
+
 
 - (void)beginAuthorization {
 
@@ -1694,8 +1380,10 @@ static void DeleteTokenPayload(
     }
 
 
-    if (_authorizationRunning ||
-        _tokenOperationRunning) {
+    if (
+        _authorizationRunning ||
+        _tokenOperationRunning
+    ) {
 
         return;
     }
@@ -1759,7 +1447,6 @@ static void DeleteTokenPayload(
             DiscordBridge *selfRef =
                 weakSelf;
 
-
             if (!selfRef) {
                 return;
             }
@@ -1776,7 +1463,6 @@ static void DeleteTokenPayload(
                     notifyReady:NO
                     text:@"Discord 認証失敗"
                 ];
-
 
                 return;
             }
@@ -1803,29 +1489,16 @@ static void DeleteTokenPayload(
                 redirectUri,
 
                 [weakSelf](
-                    discordpp::ClientResult
-                        tokenResult,
-
-                    std::string
-                        accessToken,
-
-                    std::string
-                        refreshToken,
-
-                    discordpp::
-                        AuthorizationTokenType
-                        tokenType,
-
-                    int32_t
-                        expiresIn,
-
-                    std::string
-                        scopes
+                    discordpp::ClientResult tokenResult,
+                    std::string accessToken,
+                    std::string refreshToken,
+                    discordpp::AuthorizationTokenType tokenType,
+                    int32_t expiresIn,
+                    std::string scopes
                 ) {
 
                     DiscordBridge *self2 =
                         weakSelf;
-
 
                     if (!self2) {
                         return;
@@ -1850,8 +1523,6 @@ static void DeleteTokenPayload(
                         return;
                     }
 
-
-                    // MARK: SAVE TO KEYCHAIN
 
                     NSString *accessString =
                         StringToNSString(
@@ -1892,14 +1563,12 @@ static void DeleteTokenPayload(
                         accessToken,
 
                         [weakSelf](
-                            discordpp::
-                                ClientResult
+                            discordpp::ClientResult
                                 updateResult
                         ) {
 
                             DiscordBridge *self3 =
                                 weakSelf;
-
 
                             if (!self3) {
                                 return;
@@ -1949,9 +1618,8 @@ static void DeleteTokenPayload(
 }
 
 
-// MARK: =========================================
-// MARK: Reconnect
-// MARK: =========================================
+// MARK: - Reconnect
+
 
 - (void)reconnectIfNeeded {
 
@@ -1965,8 +1633,6 @@ static void DeleteTokenPayload(
     discordpp::Client::Status status =
         _client->GetStatus();
 
-
-    // MARK: Already ready
 
     if (
         status ==
@@ -1986,14 +1652,10 @@ static void DeleteTokenPayload(
             sendPendingPresenceIfPossible
         ];
 
-
         return;
     }
 
 
-    /*
-     SDK自身が処理中なら邪魔しない。
-     */
     if (
         status ==
             discordpp::Client::Status::Connecting
@@ -2024,36 +1686,17 @@ static void DeleteTokenPayload(
     }
 
 
-    [self
-        loadStoredTokensIfNeeded
-    ];
+    [self loadStoredTokensIfNeeded];
 
 
-    // MARK: Refresh first
+    if ([self shouldRefreshToken]) {
 
-    if (
-        [self
-            shouldRefreshToken
-        ]
-    ) {
-
-        [self
-            refreshStoredToken
-        ];
+        [self refreshStoredToken];
 
         return;
     }
 
 
-    /*
-     SDKにすでにTokenが入っている場合。
-
-     Wi-Fi → モバイル
-     VPN ON → OFF
-     瞬断
-
-     などではここ。
-     */
     if (_client->IsAuthenticated()) {
 
         [self
@@ -2068,8 +1711,6 @@ static void DeleteTokenPayload(
     }
 
 
-    // MARK: Restore Keychain Access Token
-
     if (!_accessToken.empty()) {
 
         [self
@@ -2080,30 +1721,20 @@ static void DeleteTokenPayload(
     }
 
 
-    // MARK: Refresh only
-
     if (!_refreshToken.empty()) {
 
-        [self
-            refreshStoredToken
-        ];
+        [self refreshStoredToken];
 
         return;
     }
 
 
-    /*
-     本当に認証情報が無い時だけ。
-     */
-    [self
-        beginAuthorization
-    ];
+    [self beginAuthorization];
 }
 
 
-// MARK: =========================================
-// MARK: Run callbacks
-// MARK: =========================================
+// MARK: - Callbacks
+
 
 - (void)runCallbacks {
 
@@ -2111,9 +1742,8 @@ static void DeleteTokenPayload(
 }
 
 
-// MARK: =========================================
-// MARK: Presence
-// MARK: =========================================
+// MARK: - Update Presence
+
 
 - (void)updatePresenceWithTitle:
             (NSString *)title
@@ -2131,32 +1761,23 @@ static void DeleteTokenPayload(
             (int64_t)endTimestamp {
 
     /*
-     Discordが切断中でも
-     最新の曲を保存する。
-
-     Readyへ戻った瞬間に
-     これを再送する。
+     Discord切断中でも
+     最新の曲を保持する。
      */
     _pendingPresence.valid =
         true;
 
 
     _pendingPresence.title =
-        NSStringToString(
-            title
-        );
+        NSStringToString(title);
 
 
     _pendingPresence.artist =
-        NSStringToString(
-            artist
-        );
+        NSStringToString(artist);
 
 
     _pendingPresence.album =
-        NSStringToString(
-            album
-        );
+        NSStringToString(album);
 
 
     _pendingPresence.songURL =
@@ -2185,7 +1806,8 @@ static void DeleteTokenPayload(
 }
 
 
-// MARK: - Send Pending Presence
+// MARK: - Send Presence
+
 
 - (void)sendPendingPresenceIfPossible {
 
@@ -2215,28 +1837,50 @@ static void DeleteTokenPayload(
     discordpp::Activity activity;
 
 
+    /*
+     Listening
+     */
     activity.SetType(
         discordpp::
             ActivityTypes::Listening
     );
 
 
-    // 曲名
+    /*
+     超重要。
 
+     デフォルトではDiscordの
+     アプリ名 / SDK名がステータスに使われる。
+
+     Detailsを指定して、
+     下のSetDetailsに入れている曲名を
+     ステータスとして使わせる。
+     */
+    activity.SetStatusDisplayType(
+        discordpp::
+            StatusDisplayTypes::Details
+    );
+
+
+    /*
+     曲名
+     */
     activity.SetDetails(
         presence.title
     );
 
 
-    // Artist
-
+    /*
+     アーティスト
+     */
     activity.SetState(
         presence.artist
     );
 
 
-    // Apple Music URL
-
+    /*
+     曲名タップ → Apple Music
+     */
     if (
         presence.songURL.has_value()
     ) {
@@ -2247,7 +1891,8 @@ static void DeleteTokenPayload(
     }
 
 
-    // MARK: Time
+    // MARK: - Timestamps
+
 
     discordpp::ActivityTimestamps
         timestamps;
@@ -2278,7 +1923,8 @@ static void DeleteTokenPayload(
     );
 
 
-    // MARK: Artwork
+    // MARK: - Artwork
+
 
     discordpp::ActivityAssets
         assets;
@@ -2289,8 +1935,8 @@ static void DeleteTokenPayload(
     ) {
 
         /*
-         今まで動いていた
-         曲ジャケットURLをそのまま使用。
+         Apple Musicの
+         実ジャケットURL
          */
         assets.SetLargeImage(
             presence.artworkURL.value()
@@ -2300,7 +1946,7 @@ static void DeleteTokenPayload(
 
         /*
          Artworkが本当に取得不能な時だけ
-         SDKに登録したApple Music画像。
+         Developer Portalのassetへfallback
          */
         assets.SetLargeImage(
             "applemusic"
@@ -2308,8 +1954,9 @@ static void DeleteTokenPayload(
     }
 
 
-    // Album tooltip
-
+    /*
+     アルバム名
+     */
     if (
         presence.album.length() >= 2
     ) {
@@ -2336,8 +1983,10 @@ static void DeleteTokenPayload(
     }
 
 
-    // Artwork tap → Apple Music
-
+    /*
+     ジャケットタップ
+     → Apple Music
+     */
     if (
         presence.songURL.has_value()
     ) {
@@ -2377,7 +2026,6 @@ static void DeleteTokenPayload(
             DiscordBridge *selfRef =
                 weakSelf;
 
-
             if (!selfRef) {
                 return;
             }
@@ -2392,15 +2040,14 @@ static void DeleteTokenPayload(
 
 
                 /*
-                 Presenceは消さない。
+                 pendingPresenceは消さない。
 
-                 pendingPresenceは残っているので
-                 再接続時に最新曲を再送。
+                 再接続したら
+                 現在曲をもう一度送る。
                  */
                 [selfRef
                     notifyReady:NO
-                    text:
-                        @"Presence 再送待ち"
+                    text:@"Presence 再送待ち"
                 ];
 
 
@@ -2417,7 +2064,6 @@ static void DeleteTokenPayload(
                     dispatch_get_main_queue(),
 
                     ^{
-
                         [selfRef
                             reconnectIfNeeded
                         ];
@@ -2429,17 +2075,11 @@ static void DeleteTokenPayload(
 }
 
 
-// MARK: =========================================
-// MARK: Clear Presence
-// MARK: =========================================
+// MARK: - Clear Presence
+
 
 - (void)clearPresence {
 
-    /*
-     切断中に停止した場合、
-     再接続時に古い曲が復活しないよう
-     pendingも無効化。
-     */
     _pendingPresence.valid =
         false;
 
@@ -2460,5 +2100,6 @@ static void DeleteTokenPayload(
 
     _client->ClearRichPresence();
 }
+
 
 @end
