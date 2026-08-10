@@ -6,6 +6,10 @@ import UIKit
 @MainActor
 final class PresenceViewModel: ObservableObject {
 
+    // MARK: =====================================
+    // MARK: UI
+    // MARK: =====================================
+
     @Published var trackTitle =
         "未取得"
 
@@ -25,10 +29,18 @@ final class PresenceViewModel: ObservableObject {
         true
 
 
+    // MARK: =====================================
+    // MARK: Apple Music
+    // MARK: =====================================
+
     private let player =
         MPMusicPlayerController
             .systemMusicPlayer
 
+
+    // MARK: =====================================
+    // MARK: Lifecycle
+    // MARK: =====================================
 
     private var hasStarted =
         false
@@ -38,6 +50,10 @@ final class PresenceViewModel: ObservableObject {
         [NSObjectProtocol] = []
 
 
+    // MARK: =====================================
+    // MARK: Timers
+    // MARK: =====================================
+
     private var callbackTimer:
         Timer?
 
@@ -45,6 +61,10 @@ final class PresenceViewModel: ObservableObject {
     private var healthTimer:
         Timer?
 
+
+    // MARK: =====================================
+    // MARK: Presence
+    // MARK: =====================================
 
     private var trackUpdateTask:
         Task<Void, Never>?
@@ -55,14 +75,14 @@ final class PresenceViewModel: ObservableObject {
 
 
     /*
-     現在検出している曲
+     現在検出している曲。
      */
     private var lastObservedTrackIdentity =
         ""
 
 
     /*
-     Discordが本当に成功callbackを返した曲
+     Discordが本当に成功callbackを返した曲。
      */
     private var lastSuccessfullySentTrackIdentity =
         ""
@@ -71,18 +91,15 @@ final class PresenceViewModel: ObservableObject {
     /*
      現在送信処理中の曲。
 
-     同じ曲についてNotificationとTimerが
-     重なっても重複送信しない。
+     曲変更通知と2秒Timerが重なっても
+     同じ曲を何度も送らない。
      */
     private var currentlySubmittingIdentity =
         ""
 
 
     /*
-     失敗した曲。
-
-     同一イベント内の無限送信を避けつつ、
-     health timerで再試行できるようにする。
+     直前に送信失敗した曲。
      */
     private var lastFailedIdentity =
         ""
@@ -95,6 +112,10 @@ final class PresenceViewModel: ObservableObject {
     private let failedRetryInterval:
         TimeInterval = 4.0
 
+
+    // MARK: =====================================
+    // MARK: Artwork cache
+    // MARK: =====================================
 
     private var artworkByTrack:
         [String: String] = [:]
@@ -112,25 +133,38 @@ final class PresenceViewModel: ObservableObject {
         String?
 
 
+    // MARK: =====================================
+    // MARK: Store cache
+    // MARK: =====================================
+
     private var storeResultByTrack:
         [String: StoreTrack] = [:]
 
+
+    // MARK: =====================================
+    // MARK: Reconnect
+    // MARK: =====================================
 
     private var lastReconnectAttempt =
         Date.distantPast
 
 
-    /*
-     頻繁にReconnectを叩かない。
-     */
     private let reconnectCooldown:
         TimeInterval = 8.0
 
+
+    // MARK: =====================================
+    // MARK: Background task
+    // MARK: =====================================
 
     private var backgroundTask:
         UIBackgroundTaskIdentifier =
             .invalid
 
+
+    // MARK: =====================================
+    // MARK: Debounce
+    // MARK: =====================================
 
     private let trackDebounceNanoseconds:
         UInt64 =
@@ -140,7 +174,6 @@ final class PresenceViewModel: ObservableObject {
     // MARK: =====================================
     // MARK: Start
     // MARK: =====================================
-
 
     func start() async {
 
@@ -170,12 +203,42 @@ final class PresenceViewModel: ObservableObject {
         }
 
 
+        // MARK: Background Location開始
+
+        /*
+         ここが今回の追加。
+
+         アプリが前面にいる間に
+         Core Locationを開始する。
+
+         その後バックグラウンドへ移動しても
+         Continuous Background Locationが
+         継続する。
+         */
+
+        BackgroundLocationKeeper
+            .shared
+            .start()
+
+
+        // MARK: Discord callbacks
+
         configureDiscordCallbacks()
 
+
+        // MARK: Apple Music notifications
 
         player
             .beginGeneratingPlaybackNotifications()
 
+
+        /*
+         曲が変わった時。
+
+         手動スキップでも、
+         曲が最後まで終わって次曲になった時でも
+         ここが呼ばれる。
+         */
 
         observe(
             .MPMusicPlayerControllerNowPlayingItemDidChange
@@ -186,10 +249,6 @@ final class PresenceViewModel: ObservableObject {
             }
 
 
-            /*
-             自然に曲が終わって次曲になった場合も
-             ここで拾う。
-             */
             self
                 .handlePossibleTrackChange(
                     immediate:
@@ -197,6 +256,10 @@ final class PresenceViewModel: ObservableObject {
                 )
         }
 
+
+        /*
+         再生・停止・一時停止など。
+         */
 
         observe(
             .MPMusicPlayerControllerPlaybackStateDidChange
@@ -214,6 +277,8 @@ final class PresenceViewModel: ObservableObject {
                 )
         }
 
+
+        // MARK: App Active
 
         let activeObserver =
             NotificationCenter
@@ -235,6 +300,16 @@ final class PresenceViewModel: ObservableObject {
                         }
 
 
+                        /*
+                         念のため位置情報サービスを確認。
+                         既に開始済みなら何もしない。
+                         */
+
+                        BackgroundLocationKeeper
+                            .shared
+                            .start()
+
+
                         self
                             .startShortBackgroundWindow()
 
@@ -246,11 +321,12 @@ final class PresenceViewModel: ObservableObject {
 
                         /*
                          アプリを開いた時は
-                         現在曲を必ず読む。
+                         現在曲を読み直す。
 
-                         ただしforce sendは
-                         「未送信の時だけ」。
+                         Ready復帰のたびに
+                         無理矢理Presence送信はしない。
                          */
+
                         self
                             .handlePossibleTrackChange(
                                 immediate:
@@ -266,6 +342,8 @@ final class PresenceViewModel: ObservableObject {
             activeObserver
         )
 
+
+        // MARK: Foreground
 
         let foregroundObserver =
             NotificationCenter
@@ -306,6 +384,8 @@ final class PresenceViewModel: ObservableObject {
         )
 
 
+        // MARK: Background
+
         let backgroundObserver =
             NotificationCenter
                 .default
@@ -326,6 +406,11 @@ final class PresenceViewModel: ObservableObject {
                         }
 
 
+                        /*
+                         今までの短時間BackgroundTaskも
+                         保険として残しておく。
+                         */
+
                         self
                             .startShortBackgroundWindow()
 
@@ -335,6 +420,11 @@ final class PresenceViewModel: ObservableObject {
                                 immediate:
                                     true
                             )
+
+
+                        DiscordBridge
+                            .shared()
+                            .runCallbacks()
                     }
                 }
 
@@ -344,16 +434,22 @@ final class PresenceViewModel: ObservableObject {
         )
 
 
+        // MARK: Timers
+
         startCallbackTimer()
 
         startHealthTimer()
 
+
+        // MARK: Initial sync
 
         syncFromMusic(
             forcePresenceUpdate:
                 false
         )
 
+
+        // MARK: Discord auto connect
 
         let appID =
             GeneratedConfig
@@ -380,12 +476,13 @@ final class PresenceViewModel: ObservableObject {
     // MARK: Discord callbacks
     // MARK: =====================================
 
-
     private func configureDiscordCallbacks() {
 
         let bridge =
             DiscordBridge.shared()
 
+
+        // MARK: Connection state
 
         bridge.onStatusChanged = {
             [weak self]
@@ -411,21 +508,17 @@ final class PresenceViewModel: ObservableObject {
                 if ready {
 
                     self.lastReconnectAttempt =
-                        .distantPast
+                        Date.distantPast
 
 
                     /*
-                     ここが重要。
+                     Readyへ戻っただけでは
+                     強制Presence送信しない。
 
-                     前はReady復帰のたびに
-                     forceSendしていた。
-
-                     それを削除。
-
-                     DiscordBridge側の
-                     pendingPresenceがReady時に
-                     1回だけ再送される。
+                     Bridge側のpending Presenceが
+                     あればBridgeが送る。
                      */
+
                     self
                         .handlePossibleTrackChange(
                             immediate:
@@ -437,6 +530,8 @@ final class PresenceViewModel: ObservableObject {
             }
         }
 
+
+        // MARK: Presence result
 
         bridge.onPresenceResult = {
             [weak self]
@@ -461,12 +556,10 @@ final class PresenceViewModel: ObservableObject {
                 }
 
 
+                // MARK: Success
+
                 if success {
 
-                    /*
-                     この曲がまだ現在曲なら
-                     成功済みにする。
-                     */
                     guard let item =
                         self.player
                             .nowPlayingItem
@@ -483,15 +576,17 @@ final class PresenceViewModel: ObservableObject {
                         )
 
 
+                    /*
+                     callbackが返ってくるまでに
+                     既に次曲になっていた場合、
+                     古い曲の成功として無視する。
+                     */
+
                     guard
                         currentIdentity ==
                         presenceID
                     else {
 
-                        /*
-                         既に次曲なら
-                         古い成功callbackなので無視。
-                         */
                         self
                             .handlePossibleTrackChange(
                                 immediate:
@@ -512,13 +607,18 @@ final class PresenceViewModel: ObservableObject {
                         ""
 
 
+                    print(
+                        "[Presence] SUCCESS:",
+                        presenceID
+                    )
+
+
                     return
                 }
 
 
-                /*
-                 失敗した場合は成功済みにしない。
-                 */
+                // MARK: Failure
+
                 self
                     .lastFailedIdentity =
                     presenceID
@@ -529,10 +629,18 @@ final class PresenceViewModel: ObservableObject {
                     Date()
 
 
+                print(
+                    "[Presence] FAILED:",
+                    presenceID
+                )
+
+
                 /*
-                 既に次の曲へ変わっていた場合だけ
-                 次曲をすぐ確認。
+                 失敗している間に
+                 次曲へ移っていたら
+                 新しい曲をすぐ処理する。
                  */
+
                 if let item =
                     self.player
                         .nowPlayingItem {
@@ -563,7 +671,6 @@ final class PresenceViewModel: ObservableObject {
     // MARK: Manual Connect
     // MARK: =====================================
 
-
     func connectDiscord() {
 
         let appID =
@@ -593,12 +700,25 @@ final class PresenceViewModel: ObservableObject {
     // MARK: Discord callback timer
     // MARK: =====================================
 
-
     private func startCallbackTimer() {
 
         callbackTimer?
             .invalidate()
 
+
+        /*
+         Discord SDK callbacks。
+
+         Foregroundでは0.2秒ごと。
+
+         Background Locationで
+         アプリが生きている間も
+         RunLoopが動けばこれが継続する。
+
+         さらにBackgroundLocationKeeper側でも
+         location updateのたびに
+         runCallbacks()を呼ぶ。
+         */
 
         callbackTimer =
             Timer.scheduledTimer(
@@ -629,7 +749,6 @@ final class PresenceViewModel: ObservableObject {
     // MARK: Health monitor
     // MARK: =====================================
 
-
     private func startHealthTimer() {
 
         healthTimer?
@@ -637,12 +756,14 @@ final class PresenceViewModel: ObservableObject {
 
 
         /*
-         Notification取りこぼし対策。
+         曲変更Notificationを
+         万が一取りこぼした場合の保険。
 
-         2秒ごとに現在曲IDだけ確認。
+         2秒ごとに現在曲を確認。
 
-         同じ曲を毎回送信するわけではない。
+         同じ曲ならPresenceは送らない。
          */
+
         healthTimer =
             Timer.scheduledTimer(
                 withTimeInterval:
@@ -691,7 +812,6 @@ final class PresenceViewModel: ObservableObject {
     // MARK: Reconnect
     // MARK: =====================================
 
-
     private func reconnectDiscordIfNeeded() {
 
         guard
@@ -723,10 +843,15 @@ final class PresenceViewModel: ObservableObject {
 
 
         /*
-         Bridge側で
-         Reconnecting / Connectingなら
-         Connectしない。
+         Bridge側で現在statusを見る。
+
+         Connecting /
+         Reconnecting /
+         HttpWait
+
+         ならConnectを重ねない。
          */
+
         DiscordBridge
             .shared()
             .reconnectIfNeeded()
@@ -736,7 +861,6 @@ final class PresenceViewModel: ObservableObject {
     // MARK: =====================================
     // MARK: Notification helper
     // MARK: =====================================
-
 
     private func observe(
         _ name:
@@ -775,7 +899,6 @@ final class PresenceViewModel: ObservableObject {
     // MARK: Music Sync
     // MARK: =====================================
 
-
     func syncFromMusic(
         forcePresenceUpdate:
             Bool = false
@@ -799,30 +922,43 @@ final class PresenceViewModel: ObservableObject {
             .playbackState {
 
         case .playing:
+
             musicStatus =
                 "再生中"
 
+
         case .paused:
+
             musicStatus =
                 "一時停止"
 
+
         case .stopped:
+
             musicStatus =
                 "停止"
 
+
         case .interrupted:
+
             musicStatus =
                 "中断"
 
+
         case .seekingForward:
+
             musicStatus =
                 "早送り"
 
+
         case .seekingBackward:
+
             musicStatus =
                 "巻き戻し"
 
+
         @unknown default:
+
             musicStatus =
                 "その他"
         }
@@ -833,7 +969,6 @@ final class PresenceViewModel: ObservableObject {
     // MARK: Detect Current Track
     // MARK: =====================================
 
-
     private func handlePossibleTrackChange(
         immediate:
             Bool,
@@ -843,6 +978,8 @@ final class PresenceViewModel: ObservableObject {
 
         updatePlaybackStateText()
 
+
+        // MARK: No current song
 
         guard let item =
             player.nowPlayingItem
@@ -865,6 +1002,10 @@ final class PresenceViewModel: ObservableObject {
 
 
             currentlySubmittingIdentity =
+                ""
+
+
+            lastFailedIdentity =
                 ""
 
 
@@ -899,14 +1040,10 @@ final class PresenceViewModel: ObservableObject {
             lastObservedTrackIdentity
 
 
+        // MARK: New song
+
         if changed {
 
-            /*
-             曲A → 曲B
-
-             ここで送信状態を
-             新しい曲用にリセットする。
-             */
             generation &+=
                 1
 
@@ -914,6 +1051,10 @@ final class PresenceViewModel: ObservableObject {
             lastObservedTrackIdentity =
                 identity
 
+
+            /*
+             前の曲の送信処理状態を解除。
+             */
 
             currentlySubmittingIdentity =
                 ""
@@ -933,6 +1074,14 @@ final class PresenceViewModel: ObservableObject {
                 item.artist
                 ??
                 "Unknown Artist"
+
+
+            print(
+                "[Music] NEW TRACK:",
+                trackTitle,
+                "-",
+                artist
+            )
         }
 
 
@@ -945,9 +1094,8 @@ final class PresenceViewModel: ObservableObject {
         }
 
 
-        /*
-         再生していないならPresence消去。
-         */
+        // MARK: Not playing
+
         guard
             player.playbackState ==
             .playing
@@ -959,14 +1107,13 @@ final class PresenceViewModel: ObservableObject {
                 clearPresence()
             }
 
+
             return
         }
 
 
-        /*
-         本当にDiscord成功済みの
-         同じ曲なら送らない。
-         */
+        // MARK: Already successfully sent
+
         if !forceSend &&
             identity ==
             lastSuccessfullySentTrackIdentity {
@@ -975,11 +1122,8 @@ final class PresenceViewModel: ObservableObject {
         }
 
 
-        /*
-         現在その曲を送信中なら
-         NotificationとTimerが重なっても
-         再送しない。
-         */
+        // MARK: Currently sending
+
         if !forceSend &&
             identity ==
             currentlySubmittingIdentity {
@@ -988,12 +1132,8 @@ final class PresenceViewModel: ObservableObject {
         }
 
 
-        /*
-         直前に同じ曲の送信が失敗した場合は
-         4秒だけ待つ。
+        // MARK: Recent failure cooldown
 
-         その後health timerが自動再試行する。
-         */
         if !forceSend &&
             identity ==
             lastFailedIdentity {
@@ -1013,6 +1153,8 @@ final class PresenceViewModel: ObservableObject {
         }
 
 
+        // MARK: Send
+
         schedulePresenceUpdate(
             identity:
                 identity,
@@ -1029,7 +1171,6 @@ final class PresenceViewModel: ObservableObject {
     // MARK: =====================================
     // MARK: Debounce
     // MARK: =====================================
-
 
     private func schedulePresenceUpdate(
         identity:
@@ -1093,7 +1234,6 @@ final class PresenceViewModel: ObservableObject {
     // MARK: Prepare & Send
     // MARK: =====================================
 
-
     private func prepareAndSendPresence(
         originalIdentity:
             String,
@@ -1153,10 +1293,10 @@ final class PresenceViewModel: ObservableObject {
 
 
         /*
-         ネットワーク検索中にhealth timerが
-         また来ても同曲を送らないため、
-         この時点で送信中扱い。
+         iTunes検索中に2秒Timerが来ても
+         重複送信しない。
          */
+
         currentlySubmittingIdentity =
             currentIdentity
 
@@ -1225,6 +1365,7 @@ final class PresenceViewModel: ObservableObject {
                     ""
             }
 
+
             return
         }
 
@@ -1240,6 +1381,7 @@ final class PresenceViewModel: ObservableObject {
                 currentlySubmittingIdentity =
                     ""
             }
+
 
             return
         }
@@ -1268,10 +1410,12 @@ final class PresenceViewModel: ObservableObject {
             currentlySubmittingIdentity =
                 ""
 
+
             handlePossibleTrackChange(
                 immediate:
                     true
             )
+
 
             return
         }
@@ -1285,11 +1429,15 @@ final class PresenceViewModel: ObservableObject {
             currentlySubmittingIdentity =
                 ""
 
+
             clearPresence()
+
 
             return
         }
 
+
+        // MARK: Artwork
 
         var artworkURL =
             resolved.artworkURL
@@ -1336,6 +1484,8 @@ final class PresenceViewModel: ObservableObject {
         }
 
 
+        // MARK: Playback time
+
         let duration =
             latestItem
                 .playbackDuration
@@ -1381,6 +1531,8 @@ final class PresenceViewModel: ObservableObject {
         }
 
 
+        // MARK: Apple Music URL
+
         let songURL =
             resolved.songURL
             ??
@@ -1390,12 +1542,13 @@ final class PresenceViewModel: ObservableObject {
             )
 
 
-        /*
-         Discord SDKがReadyでなくても
-         Bridgeはpending Presenceとして保持。
+        // MARK: Discord
 
-         Ready復帰時にBridgeが1回だけ送る。
+        /*
+         BridgeがReadyでなくても
+         最新Presenceをpendingとして保持する。
          */
+
         DiscordBridge
             .shared()
             .updatePresence(
@@ -1431,7 +1584,6 @@ final class PresenceViewModel: ObservableObject {
     // MARK: Manual Refresh
     // MARK: =====================================
 
-
     func forceRefresh() {
 
         generation &+=
@@ -1460,8 +1612,9 @@ final class PresenceViewModel: ObservableObject {
 
 
     /*
-     ContentView旧互換
+     旧ContentView互換。
      */
+
     func pushCurrentTrack() {
 
         forceRefresh()
@@ -1469,9 +1622,8 @@ final class PresenceViewModel: ObservableObject {
 
 
     // MARK: =====================================
-    // MARK: Store info
+    // MARK: Store information
     // MARK: =====================================
-
 
     private func resolveStoreInformation(
         item:
@@ -1489,6 +1641,8 @@ final class PresenceViewModel: ObservableObject {
     ) async
         -> ResolvedStoreInformation {
 
+
+        // MARK: Already cached
 
         if let cached =
             storeResultByTrack[
@@ -1508,6 +1662,18 @@ final class PresenceViewModel: ObservableObject {
                 )
 
 
+            if let artwork {
+
+                saveArtwork(
+                    artwork,
+                    identity:
+                        identity,
+                    albumKey:
+                        albumKey
+                )
+            }
+
+
             return
                 ResolvedStoreInformation(
                     songURL:
@@ -1519,9 +1685,30 @@ final class PresenceViewModel: ObservableObject {
         }
 
 
+        // MARK: Track artwork cache
+
+        if let cachedArtwork =
+            artworkByTrack[
+                identity
+            ] {
+
+            return
+                ResolvedStoreInformation(
+                    songURL:
+                        fallbackSongURL(
+                            item:
+                                item
+                        ),
+                    artworkURL:
+                        cachedArtwork
+                )
+        }
+
+
+        // MARK: Store ID lookup
+
         let storeID =
-            item
-                .playbackStoreID
+            item.playbackStoreID
 
 
         if !storeID.isEmpty {
@@ -1581,6 +1768,8 @@ final class PresenceViewModel: ObservableObject {
         }
 
 
+        // MARK: Album cache
+
         if let albumArtwork =
             cachedAlbumArtwork(
                 albumKey:
@@ -1599,6 +1788,8 @@ final class PresenceViewModel: ObservableObject {
                 )
         }
 
+
+        // MARK: Search fallback
 
         if let result =
             await
@@ -1649,6 +1840,11 @@ final class PresenceViewModel: ObservableObject {
                         ),
                     artworkURL:
                         artwork
+                        ??
+                        cachedAlbumArtwork(
+                            albumKey:
+                                albumKey
+                        )
                 )
         }
 
@@ -1668,6 +1864,10 @@ final class PresenceViewModel: ObservableObject {
             )
     }
 
+
+    // MARK: =====================================
+    // MARK: Artwork cache
+    // MARK: =====================================
 
     private func saveArtwork(
         _ artwork:
@@ -1727,7 +1927,8 @@ final class PresenceViewModel: ObservableObject {
         if lastArtworkAlbumKey ==
             albumKey {
 
-            return lastArtworkURL
+            return
+                lastArtworkURL
         }
 
 
@@ -1738,7 +1939,6 @@ final class PresenceViewModel: ObservableObject {
     // MARK: =====================================
     // MARK: iTunes Lookup
     // MARK: =====================================
-
 
     private func lookupStoreTrack(
         storeID:
@@ -1800,6 +2000,11 @@ final class PresenceViewModel: ObservableObject {
             request
                 .timeoutInterval =
                 8
+
+
+            request
+                .cachePolicy =
+                .reloadRevalidatingCacheData
 
 
             let (
@@ -1876,7 +2081,7 @@ final class PresenceViewModel: ObservableObject {
         } catch {
 
             print(
-                "iTunes Lookup失敗:",
+                "[iTunes] Lookup失敗:",
                 error
             )
 
@@ -1889,7 +2094,6 @@ final class PresenceViewModel: ObservableObject {
     // MARK: =====================================
     // MARK: iTunes Search
     // MARK: =====================================
-
 
     private func searchStoreTrack(
         title:
@@ -2059,25 +2263,28 @@ final class PresenceViewModel: ObservableObject {
             for candidate in
                 decoded.results {
 
-                let ct =
+                let candidateTitle =
                     normalize(
-                        candidate.trackName
+                        candidate
+                            .trackName
                         ??
                         ""
                     )
 
 
-                let ca =
+                let candidateArtist =
                     normalize(
-                        candidate.artistName
+                        candidate
+                            .artistName
                         ??
                         ""
                     )
 
 
-                let cal =
+                let candidateAlbum =
                     normalize(
-                        candidate.collectionName
+                        candidate
+                            .collectionName
                         ??
                         ""
                     )
@@ -2087,42 +2294,54 @@ final class PresenceViewModel: ObservableObject {
                     0
 
 
-                if ct ==
+                if candidateTitle ==
                     normalizedTitle {
 
                     score +=
                         100
 
                 } else if
-                    ct.contains(
+                    !normalizedTitle
+                        .isEmpty
+                    &&
+                    (
+                        candidateTitle
+                            .contains(
+                                normalizedTitle
+                            )
+                        ||
                         normalizedTitle
-                    )
-                    ||
-                    normalizedTitle
-                        .contains(
-                            ct
-                        ) {
+                            .contains(
+                                candidateTitle
+                            )
+                    ) {
 
                     score +=
                         40
                 }
 
 
-                if ca ==
+                if candidateArtist ==
                     normalizedArtist {
 
                     score +=
                         60
 
                 } else if
-                    ca.contains(
+                    !normalizedArtist
+                        .isEmpty
+                    &&
+                    (
+                        candidateArtist
+                            .contains(
+                                normalizedArtist
+                            )
+                        ||
                         normalizedArtist
-                    )
-                    ||
-                    normalizedArtist
-                        .contains(
-                            ca
-                        ) {
+                            .contains(
+                                candidateArtist
+                            )
+                    ) {
 
                     score +=
                         20
@@ -2132,11 +2351,25 @@ final class PresenceViewModel: ObservableObject {
                 if !normalizedAlbum
                     .isEmpty {
 
-                    if cal ==
+                    if candidateAlbum ==
                         normalizedAlbum {
 
                         score +=
                             40
+
+                    } else if
+                        candidateAlbum
+                            .contains(
+                                normalizedAlbum
+                            )
+                        ||
+                        normalizedAlbum
+                            .contains(
+                                candidateAlbum
+                            ) {
+
+                        score +=
+                            15
                     }
                 }
 
@@ -2160,7 +2393,7 @@ final class PresenceViewModel: ObservableObject {
         } catch {
 
             print(
-                "iTunes Search失敗:",
+                "[iTunes] Search失敗:",
                 error
             )
 
@@ -2169,6 +2402,10 @@ final class PresenceViewModel: ObservableObject {
         }
     }
 
+
+    // MARK: =====================================
+    // MARK: Artwork
+    // MARK: =====================================
 
     private func largeArtworkURL(
         from original:
@@ -2198,6 +2435,16 @@ final class PresenceViewModel: ObservableObject {
             url
                 .replacingOccurrences(
                     of:
+                        "100x100-75",
+                    with:
+                        "600x600-75"
+                )
+
+
+        url =
+            url
+                .replacingOccurrences(
+                    of:
                         "100x100",
                     with:
                         "600x600"
@@ -2213,9 +2460,22 @@ final class PresenceViewModel: ObservableObject {
                 +
                 String(
                     url.dropFirst(
-                        7
+                        "http://"
+                            .count
                     )
                 )
+        }
+
+
+        guard
+            URL(
+                string:
+                    url
+            )
+            != nil
+        else {
+
+            return nil
         }
 
 
@@ -2231,6 +2491,10 @@ final class PresenceViewModel: ObservableObject {
         return url
     }
 
+
+    // MARK: =====================================
+    // MARK: Song URL
+    // MARK: =====================================
 
     private func fallbackSongURL(
         item:
@@ -2253,6 +2517,10 @@ final class PresenceViewModel: ObservableObject {
             "https://music.apple.com/song/\(storeID)"
     }
 
+
+    // MARK: =====================================
+    // MARK: Track Identity
+    // MARK: =====================================
 
     private func trackIdentity(
         for item:
@@ -2280,9 +2548,18 @@ final class PresenceViewModel: ObservableObject {
 
         return
             [
-                item.title ?? "",
-                item.artist ?? "",
-                item.albumTitle ?? "",
+                item.title
+                ??
+                "",
+
+                item.artist
+                ??
+                "",
+
+                item.albumTitle
+                ??
+                "",
+
                 String(
                     Int(
                         item.playbackDuration
@@ -2296,12 +2573,22 @@ final class PresenceViewModel: ObservableObject {
     }
 
 
+    // MARK: =====================================
+    // MARK: Album Key
+    // MARK: =====================================
+
     private func makeAlbumKey(
         artist:
             String,
         album:
             String
     ) -> String {
+
+        let normalizedArtist =
+            normalize(
+                artist
+            )
+
 
         let normalizedAlbum =
             normalize(
@@ -2319,9 +2606,13 @@ final class PresenceViewModel: ObservableObject {
 
 
         return
-            "\(normalize(artist))|\(normalizedAlbum)"
+            "\(normalizedArtist)|\(normalizedAlbum)"
     }
 
+
+    // MARK: =====================================
+    // MARK: Normalize
+    // MARK: =====================================
 
     private func normalize(
         _ value:
@@ -2362,9 +2653,8 @@ final class PresenceViewModel: ObservableObject {
 
 
     // MARK: =====================================
-    // MARK: Clear
+    // MARK: Clear Presence
     // MARK: =====================================
-
 
     func clearPresence() {
 
@@ -2388,9 +2678,8 @@ final class PresenceViewModel: ObservableObject {
 
 
     // MARK: =====================================
-    // MARK: Background
+    // MARK: Short Background Task
     // MARK: =====================================
-
 
     private func startShortBackgroundWindow() {
 
@@ -2479,13 +2768,15 @@ final class PresenceViewModel: ObservableObject {
 
 
     // MARK: =====================================
-    // MARK: Background Refresh compatibility
+    // MARK: BGAppRefresh compatibility
     // MARK: =====================================
-
 
     func performBackgroundRefresh() async {
 
         updatePlaybackStateText()
+
+
+        startShortBackgroundWindow()
 
 
         DiscordBridge
@@ -2499,12 +2790,10 @@ final class PresenceViewModel: ObservableObject {
 
 
         /*
-         Background refreshが来た時も
+         iOSがBGAppRefreshを起こしてくれた場合も
          現在曲を確認。
-
-         「1曲目だけで止まる」問題の
-         追加保険。
          */
+
         handlePossibleTrackChange(
             immediate:
                 true,
@@ -2520,7 +2809,11 @@ final class PresenceViewModel: ObservableObject {
         }
 
 
-        for _ in 0..<15 {
+        /*
+         Discord callbackを受け取る猶予。
+         */
+
+        for _ in 0..<20 {
 
             DiscordBridge
                 .shared()
@@ -2538,9 +2831,8 @@ final class PresenceViewModel: ObservableObject {
 
 
 // MARK: =========================================
-// MARK: Models
+// MARK: iTunes Models
 // MARK: =========================================
-
 
 private struct StoreResponse:
     Decodable {
