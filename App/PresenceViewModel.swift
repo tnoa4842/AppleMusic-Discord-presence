@@ -16,31 +16,17 @@ final class PresenceViewModel: ObservableObject {
     private let player = MPMusicPlayerController.systemMusicPlayer
 
     private var observers: [NSObjectProtocol] = []
-
-    // Discord SDK の callback を回す
     private var callbackTimer: Timer?
+    private var syncTimer: Timer?
 
-    // 曲変更通知を取りこぼした場合の保険
-    private var musicPollTimer: Timer?
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
 
-    // バックグラウンドに入った直後の猶予時間を利用
-    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
-
-    private var lastTrackKey = ""
+    private var lastTrackID = ""
     private var lastPlaybackState: MPMusicPlaybackState = .stopped
 
-    private var hasStarted = false
-
-    // MARK: - Start
+    // MARK: - 起動
 
     func start() async {
-
-        guard !hasStarted else {
-            syncFromMusic(force: true)
-            return
-        }
-
-        hasStarted = true
 
         let auth = await MPMediaLibrary.requestAuthorization()
 
@@ -50,18 +36,13 @@ final class PresenceViewModel: ObservableObject {
         }
 
         setupDiscordCallback()
-
-        player.beginGeneratingPlaybackNotifications()
-
         setupMusicNotifications()
         setupApplicationNotifications()
-        setupBackgroundRefreshNotification()
 
-        startForegroundTimers()
+        startCallbackTimer()
+        startSyncTimer()
 
-        syncFromMusic(force: true)
-
-        BackgroundRefreshManager.schedule()
+        syncFromMusic()
     }
 
     // MARK: - Discord
@@ -78,7 +59,7 @@ final class PresenceViewModel: ObservableObject {
                 self.discordStatus = text
 
                 if ready {
-                    self.pushCurrentTrack(force: true)
+                    self.pushCurrentTrack()
                 }
             }
         }
@@ -93,33 +74,38 @@ final class PresenceViewModel: ObservableObject {
             return
         }
 
-        discordStatus = "Discord 接続中"
+        discordStatus = "接続中"
 
         DiscordBridge.shared().start(
             withApplicationID: appID
         )
     }
 
-    // MARK: - Music Notifications
+    // MARK: - Apple Music Notifications
 
     private func setupMusicNotifications() {
+
+        player.beginGeneratingPlaybackNotifications()
 
         observe(
             .MPMusicPlayerControllerNowPlayingItemDidChange
         ) { [weak self] in
 
-            guard let self else { return }
-
-            self.syncFromMusic(force: true)
+            self?.syncFromMusic()
         }
 
         observe(
             .MPMusicPlayerControllerPlaybackStateDidChange
         ) { [weak self] in
 
-            guard let self else { return }
+            self?.syncFromMusic()
+        }
 
-            self.syncFromMusic(force: true)
+        observe(
+            .MPMusicPlayerControllerVolumeDidChange
+        ) { [weak self] in
+
+            self?.syncFromMusic()
         }
     }
 
@@ -146,119 +132,67 @@ final class PresenceViewModel: ObservableObject {
 
     private func setupApplicationNotifications() {
 
-        observers.append(
+        let activeObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
 
-            NotificationCenter.default.addObserver(
-                forName: UIApplication.didBecomeActiveNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
+            Task { @MainActor in
 
-                Task { @MainActor in
+                guard let self else { return }
 
-                    guard let self else { return }
+                self.endBackgroundTask()
 
-                    self.endBackgroundTask()
+                self.syncFromMusic()
 
-                    self.startForegroundTimers()
-
-                    self.syncFromMusic(force: true)
-
-                    BackgroundRefreshManager.schedule()
+                if self.isDiscordReady {
+                    self.pushCurrentTrack()
                 }
             }
-        )
+        }
 
-        observers.append(
+        observers.append(activeObserver)
 
-            NotificationCenter.default.addObserver(
-                forName: UIApplication.willEnterForegroundNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
+        let backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
 
-                Task { @MainActor in
-                    self?.syncFromMusic(force: true)
-                }
+            Task { @MainActor in
+
+                guard let self else { return }
+
+                self.beginBackgroundTask()
+
+                self.syncFromMusic()
             }
-        )
+        }
 
-        observers.append(
+        observers.append(backgroundObserver)
 
-            NotificationCenter.default.addObserver(
-                forName: UIApplication.didEnterBackgroundNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
+        let foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
 
-                Task { @MainActor in
+            Task { @MainActor in
 
-                    guard let self else { return }
-
-                    self.beginBackgroundTask()
-
-                    self.syncFromMusic(force: true)
-
-                    BackgroundRefreshManager.schedule()
-                }
+                self?.syncFromMusic()
             }
-        )
+        }
 
-        observers.append(
-
-            NotificationCenter.default.addObserver(
-                forName: UIApplication.willResignActiveNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-
-                Task { @MainActor in
-                    self?.syncFromMusic(force: true)
-                }
-            }
-        )
+        observers.append(foregroundObserver)
     }
 
-    // MARK: - BGTask Notification
+    // MARK: - Discord callbacks
 
-    private func setupBackgroundRefreshNotification() {
-
-        observers.append(
-
-            NotificationCenter.default.addObserver(
-                forName: .appleMusicDiscordBackgroundRefresh,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-
-                Task { @MainActor in
-
-                    guard let self else { return }
-
-                    self.runBackgroundRefresh()
-                }
-            }
-        )
-    }
-
-    func runBackgroundRefresh() {
-
-        // Discord SDK callback を何回か処理
-        DiscordBridge.shared().runCallbacks()
-
-        syncFromMusic(force: true)
-
-        BackgroundRefreshManager.schedule()
-    }
-
-    // MARK: - Foreground Timers
-
-    private func startForegroundTimers() {
+    private func startCallbackTimer() {
 
         callbackTimer?.invalidate()
-        musicPollTimer?.invalidate()
 
-        // Discord SDK callback
         callbackTimer = Timer.scheduledTimer(
             withTimeInterval: 0.20,
             repeats: true
@@ -267,78 +201,64 @@ final class PresenceViewModel: ObservableObject {
             DiscordBridge.shared().runCallbacks()
         }
 
-        // MusicPlayer の通知取りこぼし対策
-        musicPollTimer = Timer.scheduledTimer(
+        if let callbackTimer {
+            RunLoop.main.add(
+                callbackTimer,
+                forMode: .common
+            )
+        }
+    }
+
+    // MARK: - 自動監視
+
+    private func startSyncTimer() {
+
+        syncTimer?.invalidate()
+
+        syncTimer = Timer.scheduledTimer(
             withTimeInterval: 2.0,
             repeats: true
         ) { [weak self] _ in
 
             Task { @MainActor in
-                self?.syncFromMusic(force: false)
-            }
-        }
-    }
-
-    // MARK: - Background Grace Period
-
-    private func beginBackgroundTask() {
-
-        endBackgroundTask()
-
-        backgroundTask = UIApplication.shared.beginBackgroundTask(
-            withName: "AppleMusicDiscordPresence"
-        ) { [weak self] in
-
-            Task { @MainActor in
-                self?.endBackgroundTask()
+                self?.checkForChanges()
             }
         }
 
-        // バックグラウンドへ移行した直後は
-        // iOSが許す間だけ監視を継続する。
-        startBackgroundPolling()
-    }
-
-    private func startBackgroundPolling() {
-
-        musicPollTimer?.invalidate()
-
-        musicPollTimer = Timer.scheduledTimer(
-            withTimeInterval: 2.0,
-            repeats: true
-        ) { [weak self] _ in
-
-            Task { @MainActor in
-
-                guard let self else { return }
-
-                DiscordBridge.shared().runCallbacks()
-
-                self.syncFromMusic(force: false)
-            }
+        if let syncTimer {
+            RunLoop.main.add(
+                syncTimer,
+                forMode: .common
+            )
         }
     }
 
-    private func endBackgroundTask() {
+    private func checkForChanges() {
 
-        guard backgroundTask != .invalid else {
-            return
+        let item = player.nowPlayingItem
+
+        let currentID =
+            item?.playbackStoreID.isEmpty == false
+            ? item?.playbackStoreID ?? ""
+            : "\(item?.title ?? "")|\(item?.artist ?? "")"
+
+        let state = player.playbackState
+
+        if currentID != lastTrackID ||
+            state != lastPlaybackState {
+
+            lastTrackID = currentID
+            lastPlaybackState = state
+
+            syncFromMusic()
         }
-
-        UIApplication.shared.endBackgroundTask(
-            backgroundTask
-        )
-
-        backgroundTask = .invalid
     }
 
-    // MARK: - Sync Music
+    // MARK: - Apple Music同期
 
-    func syncFromMusic(force: Bool = false) {
+    func syncFromMusic() {
 
-        let playbackState = player.playbackState
-
-        switch playbackState {
+        switch player.playbackState {
 
         case .playing:
             musicStatus = "再生中"
@@ -367,100 +287,71 @@ final class PresenceViewModel: ObservableObject {
             trackTitle = "再生中の曲なし"
             artist = ""
 
-            let stateChanged =
-                playbackState != lastPlaybackState
+            lastTrackID = ""
+            lastPlaybackState = player.playbackState
 
-            lastPlaybackState = playbackState
-
-            if autoUpdate &&
-                isDiscordReady &&
-                (force || stateChanged) {
-
+            if autoUpdate && isDiscordReady {
                 clearPresence()
             }
 
-            lastTrackKey = ""
-
             return
         }
 
-        let title = item.title ?? "Unknown Track"
-        let artistName = item.artist ?? "Unknown Artist"
-        let album = item.albumTitle ?? ""
+        trackTitle =
+            item.title
+            ?? "Unknown Track"
 
-        let storeID = item.playbackStoreID
+        artist =
+            item.artist
+            ?? "Unknown Artist"
 
-        let persistentID =
-            String(item.persistentID)
+        if !item.playbackStoreID.isEmpty {
 
-        let trackKey =
-            "\(storeID)|\(persistentID)|\(title)|\(artistName)|\(album)"
+            lastTrackID =
+                item.playbackStoreID
 
-        let trackChanged =
-            trackKey != lastTrackKey
+        } else {
 
-        let stateChanged =
-            playbackState != lastPlaybackState
-
-        trackTitle = title
-        artist = artistName
-
-        lastTrackKey = trackKey
-        lastPlaybackState = playbackState
-
-        guard autoUpdate else {
-            return
+            lastTrackID =
+                "\(trackTitle)|\(artist)"
         }
 
-        guard isDiscordReady else {
-            return
-        }
+        lastPlaybackState =
+            player.playbackState
 
-        if force || trackChanged || stateChanged {
-
-            if playbackState == .playing {
-
-                pushCurrentTrack(
-                    force: true
-                )
-
-            } else {
-
-                clearPresence()
-            }
+        if autoUpdate && isDiscordReady {
+            pushCurrentTrack()
         }
     }
 
-    // MARK: - Push Presence
+    // MARK: - Discord Presence更新
 
-    func pushCurrentTrack(force: Bool = false) {
+    func pushCurrentTrack() {
 
         guard isDiscordReady else {
             return
         }
 
-        guard player.playbackState == .playing else {
+        guard
+            player.playbackState == .playing,
+            let item = player.nowPlayingItem
+        else {
 
             clearPresence()
-
-            return
-        }
-
-        guard let item = player.nowPlayingItem else {
-
-            clearPresence()
-
             return
         }
 
         let title =
-            item.title ?? "Unknown Track"
+            item.title
+            ?? "Unknown Track"
 
         let artistName =
-            item.artist ?? "Unknown Artist"
+            item.artist
+            ?? "Unknown Artist"
 
         let album =
-            item.albumTitle ?? ""
+            item.albumTitle
+            ?? ""
 
         let duration =
             item.playbackDuration
@@ -492,6 +383,8 @@ final class PresenceViewModel: ObservableObject {
             end = 0
         }
 
+        // Apple Music URL
+
         let storeID =
             item.playbackStoreID
 
@@ -507,21 +400,28 @@ final class PresenceViewModel: ObservableObject {
                 "https://music.apple.com/song/\(storeID)"
         }
 
+        // ジャケット画像
+        //
+        // MPMediaItemArtwork から直接URLは取れないため、
+        // 現状はnil。
+        //
+        // Discord側の既存の画像処理を使う場合でも
+        // artworkURL 引数そのものは必要。
+
+        let artworkURL: String? = nil
+
         DiscordBridge.shared().updatePresence(
             title: title,
             artist: artistName,
             album: album,
             songURL: songURL,
+            artworkURL: artworkURL,
             startTimestamp: start,
             endTimestamp: end
         )
-
-        // SDKによってはUpdateRichPresence後も
-        // callback処理が必要なので即回す
-        DiscordBridge.shared().runCallbacks()
     }
 
-    // MARK: - Clear
+    // MARK: - Presence削除
 
     func clearPresence() {
 
@@ -530,39 +430,98 @@ final class PresenceViewModel: ObservableObject {
         }
 
         DiscordBridge.shared().clearPresence()
-
-        DiscordBridge.shared().runCallbacks()
     }
 
-    // MARK: - Manual Refresh
+    // MARK: - Background task
 
-    func refreshNow() {
+    private func beginBackgroundTask() {
 
-        DiscordBridge.shared().runCallbacks()
+        if backgroundTaskID != .invalid {
+            return
+        }
 
-        syncFromMusic(force: true)
+        backgroundTaskID =
+            UIApplication.shared.beginBackgroundTask(
+                withName: "AppleMusicDiscordPresence"
+            ) { [weak self] in
+
+                Task { @MainActor in
+                    self?.endBackgroundTask()
+                }
+            }
     }
 
-    // MARK: - Cleanup
+    private func endBackgroundTask() {
+
+        guard backgroundTaskID != .invalid else {
+            return
+        }
+
+        UIApplication.shared.endBackgroundTask(
+            backgroundTaskID
+        )
+
+        backgroundTaskID = .invalid
+    }
+
+    // MARK: - Background Refreshから呼ぶ
+
+    func performBackgroundRefresh() async {
+
+        syncFromMusic()
+
+        if !isDiscordReady {
+
+            let appID =
+                GeneratedConfig.discordApplicationID
+
+            if appID != 0 {
+
+                DiscordBridge.shared().start(
+                    withApplicationID: appID
+                )
+            }
+        }
+
+        for _ in 0..<20 {
+
+            DiscordBridge.shared().runCallbacks()
+
+            try? await Task.sleep(
+                nanoseconds: 100_000_000
+            )
+        }
+
+        syncFromMusic()
+
+        if isDiscordReady {
+            pushCurrentTrack()
+        }
+    }
+
+    // MARK: - 手動更新
+
+    func forceRefresh() {
+
+        syncFromMusic()
+
+        if isDiscordReady {
+            pushCurrentTrack()
+        }
+    }
+
+    // MARK: - 終了処理
 
     deinit {
 
         player.endGeneratingPlaybackNotifications()
 
         callbackTimer?.invalidate()
-        musicPollTimer?.invalidate()
+        syncTimer?.invalidate()
 
         for observer in observers {
-
             NotificationCenter.default.removeObserver(
                 observer
-            )
-        }
-
-        if backgroundTask != .invalid {
-
-            UIApplication.shared.endBackgroundTask(
-                backgroundTask
             )
         }
     }
