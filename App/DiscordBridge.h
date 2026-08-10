@@ -19,9 +19,10 @@ typedef void (^DiscordStatusChangedBlock)(BOOL ready, NSString *text);
                          artist:(NSString *)artist
                           album:(NSString *)album
                         songURL:(nullable NSString *)songURL
+                     artworkURL:(nullable NSString *)artworkURL
                  startTimestamp:(int64_t)startTimestamp
                    endTimestamp:(int64_t)endTimestamp
-    NS_SWIFT_NAME(updatePresence(title:artist:album:songURL:startTimestamp:endTimestamp:));
+    NS_SWIFT_NAME(updatePresence(title:artist:album:songURL:artworkURL:startTimestamp:endTimestamp:));
 
 - (void)clearPresence;
 
