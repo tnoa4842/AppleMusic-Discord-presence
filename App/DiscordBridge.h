@@ -2,11 +2,15 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-typedef void (^DiscordStatusChangedBlock)(BOOL ready, NSString *text);
+typedef void (^DiscordStatusChangedBlock)(
+    BOOL ready,
+    NSString *text
+);
 
 @interface DiscordBridge : NSObject
 
-@property (nonatomic, copy, nullable) DiscordStatusChangedBlock onStatusChanged;
+@property (nonatomic, copy, nullable)
+DiscordStatusChangedBlock onStatusChanged;
 
 + (instancetype)shared;
 
@@ -24,7 +28,17 @@ typedef void (^DiscordStatusChangedBlock)(BOOL ready, NSString *text);
                      artworkURL:(nullable NSString *)artworkURL
                  startTimestamp:(int64_t)startTimestamp
                    endTimestamp:(int64_t)endTimestamp
-    NS_SWIFT_NAME(updatePresence(title:artist:album:songURL:artworkURL:startTimestamp:endTimestamp:));
+    NS_SWIFT_NAME(
+        updatePresence(
+            title:
+            artist:
+            album:
+            songURL:
+            artworkURL:
+            startTimestamp:
+            endTimestamp:
+        )
+    );
 
 - (void)clearPresence;
 
