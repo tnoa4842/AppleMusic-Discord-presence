@@ -62,10 +62,7 @@
 
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (selfRef.onStatusChanged) {
-                    selfRef.onStatusChanged(
-                        ready,
-                        message
-                    );
+                    selfRef.onStatusChanged(ready, message);
                 }
             });
         }
@@ -96,24 +93,18 @@
 
             DiscordBridge *selfRef = weakSelf;
 
-            if (!selfRef ||
-                !selfRef->_client) {
+            if (!selfRef || !selfRef->_client) {
                 return;
             }
 
             if (!result.Successful()) {
-
-                dispatch_async(
-                    dispatch_get_main_queue(),
-                    ^{
-
+                dispatch_async(dispatch_get_main_queue(), ^{
                     if (selfRef.onStatusChanged) {
                         selfRef.onStatusChanged(
                             NO,
                             @"Discord 認証失敗"
                         );
                     }
-
                 });
 
                 return;
@@ -134,27 +125,20 @@
                     auto tokenType
                 ) {
 
-                    DiscordBridge *self2 =
-                        weakSelf;
+                    DiscordBridge *self2 = weakSelf;
 
-                    if (!self2 ||
-                        !self2->_client) {
+                    if (!self2 || !self2->_client) {
                         return;
                     }
 
                     if (!tokenResult.Successful()) {
-
-                        dispatch_async(
-                            dispatch_get_main_queue(),
-                            ^{
-
+                        dispatch_async(dispatch_get_main_queue(), ^{
                             if (self2.onStatusChanged) {
                                 self2.onStatusChanged(
                                     NO,
                                     @"Discord Token 取得失敗"
                                 );
                             }
-
                         });
 
                         return;
@@ -164,31 +148,22 @@
                         discordpp::AuthorizationTokenType::Bearer,
                         accessToken,
 
-                        [weakSelf](
-                            auto updateResult
-                        ) {
+                        [weakSelf](auto updateResult) {
 
-                            DiscordBridge *self3 =
-                                weakSelf;
+                            DiscordBridge *self3 = weakSelf;
 
-                            if (!self3 ||
-                                !self3->_client) {
+                            if (!self3 || !self3->_client) {
                                 return;
                             }
 
                             if (!updateResult.Successful()) {
-
-                                dispatch_async(
-                                    dispatch_get_main_queue(),
-                                    ^{
-
+                                dispatch_async(dispatch_get_main_queue(), ^{
                                     if (self3.onStatusChanged) {
                                         self3.onStatusChanged(
                                             NO,
                                             @"Discord Token 更新失敗"
                                         );
                                     }
-
                                 });
 
                                 return;
@@ -211,18 +186,17 @@
                          artist:(NSString *)artist
                           album:(NSString *)album
                         songURL:(NSString * _Nullable)songURL
+                     artworkURL:(NSString * _Nullable)artworkURL
                  startTimestamp:(int64_t)startTimestamp
                    endTimestamp:(int64_t)endTimestamp {
 
     if (!_client) {
-
         if (self.onStatusChanged) {
             self.onStatusChanged(
                 NO,
                 @"Discord Client 未初期化"
             );
         }
-
         return;
     }
 
@@ -232,99 +206,98 @@
         discordpp::ActivityTypes::Listening
     );
 
-    activity.SetName("Apple Music");
+    /*
+     Apple Musicという固定表示は設定しない。
+     Discord側がActivity名を要求する場合は
+     Developer Portal側のApplication名が使われる。
+    */
 
     activity.SetDetails(
-        std::string(
-            title.UTF8String ?: ""
-        )
+        std::string(title.UTF8String ?: "")
     );
 
     activity.SetState(
-        std::string(
-            artist.UTF8String ?: ""
-        )
+        std::string(artist.UTF8String ?: "")
     );
 
     if (songURL.length > 0) {
-
         activity.SetDetailsUrl(
-            std::string(
-                songURL.UTF8String ?: ""
-            )
+            std::string(songURL.UTF8String ?: "")
         );
     }
 
     discordpp::ActivityTimestamps timestamps;
 
     if (startTimestamp > 0) {
-        timestamps.SetStart(
-            startTimestamp
-        );
+        timestamps.SetStart(startTimestamp);
     }
 
     if (endTimestamp > 0) {
-        timestamps.SetEnd(
-            endTimestamp
-        );
+        timestamps.SetEnd(endTimestamp);
     }
 
-    activity.SetTimestamps(
-        timestamps
-    );
+    activity.SetTimestamps(timestamps);
+
+    /*
+     曲ジャケット
+    */
+    if (artworkURL.length > 0) {
+
+        discordpp::ActivityAssets assets;
+
+        assets.SetLargeImage(
+            std::string(artworkURL.UTF8String ?: "")
+        );
+
+        if (album.length > 0) {
+            assets.SetLargeText(
+                std::string(album.UTF8String ?: "")
+            );
+        }
+
+        if (songURL.length > 0) {
+            assets.SetLargeUrl(
+                std::string(songURL.UTF8String ?: "")
+            );
+        }
+
+        activity.SetAssets(assets);
+    }
 
     __weak DiscordBridge *weakSelf = self;
 
     _client->UpdateRichPresence(
         activity,
 
-        [weakSelf](
-            discordpp::ClientResult result
-        ) {
+        [weakSelf](discordpp::ClientResult result) {
 
-            DiscordBridge *selfRef =
-                weakSelf;
-
-            if (!selfRef) {
-                return;
-            }
+            DiscordBridge *selfRef = weakSelf;
+            if (!selfRef) return;
 
             if (result.Successful()) {
 
-                NSLog(
-                    @"UpdateRichPresence SUCCESS"
-                );
+                NSLog(@"UpdateRichPresence SUCCESS");
 
-                dispatch_async(
-                    dispatch_get_main_queue(),
-                    ^{
-
+                dispatch_async(dispatch_get_main_queue(), ^{
                     if (selfRef.onStatusChanged) {
                         selfRef.onStatusChanged(
                             YES,
                             @"接続済み / Presence送信成功"
                         );
                     }
-
                 });
 
             } else {
 
-                NSLog(
-                    @"UpdateRichPresence FAILED"
-                );
+                NSLog(@"UpdateRichPresence FAILED");
 
-                dispatch_async(
-                    dispatch_get_main_queue(),
-                    ^{
-
+                dispatch_async(dispatch_get_main_queue(), ^{
                     if (selfRef.onStatusChanged) {
                         selfRef.onStatusChanged(
                             YES,
                             @"接続済み / Presence送信失敗"
                         );
                     }
-
                 });
             }
         }
@@ -332,7 +305,6 @@
 }
 
 - (void)clearPresence {
-
     if (!_client) {
         return;
     }
