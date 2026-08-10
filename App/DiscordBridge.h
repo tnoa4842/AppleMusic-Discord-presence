@@ -5,12 +5,13 @@ NS_ASSUME_NONNULL_BEGIN
 typedef void (^DiscordStatusChangedBlock)(BOOL ready, NSString *text);
 
 @interface DiscordBridge : NSObject
+
 @property (nonatomic, copy, nullable) DiscordStatusChangedBlock onStatusChanged;
 
 + (instancetype)shared;
 
 - (void)startWithApplicationID:(uint64_t)applicationID
-NS_SWIFT_NAME(start(withApplicationID:));
+    NS_SWIFT_NAME(start(withApplicationID:));
 
 - (void)runCallbacks;
 
@@ -20,9 +21,10 @@ NS_SWIFT_NAME(start(withApplicationID:));
                         songURL:(nullable NSString *)songURL
                  startTimestamp:(int64_t)startTimestamp
                    endTimestamp:(int64_t)endTimestamp
-NS_SWIFT_NAME(updatePresence(title:artist:album:songURL:startTimestamp:endTimestamp:));
+    NS_SWIFT_NAME(updatePresence(title:artist:album:songURL:startTimestamp:endTimestamp:));
 
 - (void)clearPresence;
+
 @end
 
 NS_ASSUME_NONNULL_END
