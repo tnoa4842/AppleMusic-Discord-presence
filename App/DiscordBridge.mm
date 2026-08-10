@@ -60,8 +60,9 @@ static NSString *StringToNSString(
 ) {
 
     NSString *result =
-        [NSString stringWithUTF8String:
-            value.c_str()
+        [NSString
+            stringWithUTF8String:
+                value.c_str()
         ];
 
     return result ?: @"";
@@ -73,8 +74,10 @@ NSStringToOptionalString(
     NSString *value
 ) {
 
-    if (!value ||
-        value.length == 0) {
+    if (
+        !value ||
+        value.length == 0
+    ) {
 
         return std::nullopt;
     }
@@ -90,9 +93,11 @@ static NSString *TokenAccount(
 ) {
 
     return
-        [NSString stringWithFormat:
-            @"%llu",
-            (unsigned long long)applicationID
+        [NSString
+            stringWithFormat:
+                @"%llu",
+                (unsigned long long)
+                    applicationID
         ];
 }
 
@@ -148,13 +153,16 @@ static NSDictionary *LoadTokenPayload(
             kSecMatchLimitOne;
 
 
-    CFTypeRef result = NULL;
+    CFTypeRef result =
+        NULL;
 
 
     OSStatus status =
         SecItemCopyMatching(
+
             (__bridge CFDictionaryRef)
                 query,
+
             &result
         );
 
@@ -178,7 +186,8 @@ static NSDictionary *LoadTokenPayload(
     }
 
 
-    NSError *error = nil;
+    NSError *error =
+        nil;
 
 
     id object =
@@ -215,7 +224,8 @@ static BOOL SaveTokenPayload(
     NSDictionary *payload
 ) {
 
-    NSError *error = nil;
+    NSError *error =
+        nil;
 
 
     NSData *data =
@@ -257,6 +267,7 @@ static BOOL SaveTokenPayload(
 
     OSStatus status =
         SecItemUpdate(
+
             (__bridge CFDictionaryRef)
                 baseQuery,
 
@@ -286,15 +297,18 @@ static BOOL SaveTokenPayload(
 
         status =
             SecItemAdd(
+
                 (__bridge CFDictionaryRef)
                     newItem,
+
                 NULL
             );
     }
 
 
     return
-        status == errSecSuccess;
+        status ==
+        errSecSuccess;
 }
 
 
@@ -612,6 +626,7 @@ static void DeleteTokenPayload(
                         @"Discord 接続中"
                 ];
 
+
                 return;
             }
 
@@ -629,6 +644,7 @@ static void DeleteTokenPayload(
                     text:
                         @"Discord 初期化中"
                 ];
+
 
                 return;
             }
@@ -648,6 +664,7 @@ static void DeleteTokenPayload(
                         @"Discord 再接続中"
                 ];
 
+
                 return;
             }
 
@@ -666,6 +683,7 @@ static void DeleteTokenPayload(
                         @"Discord 切断中"
                 ];
 
+
                 return;
             }
 
@@ -683,6 +701,7 @@ static void DeleteTokenPayload(
                     text:
                         @"Discord 通信待ち"
                 ];
+
 
                 return;
             }
@@ -704,18 +723,10 @@ static void DeleteTokenPayload(
                     discordpp::Client::Error::None
                 ) {
 
-                    std::string errorText =
-                        discordpp::Client::
-                            ErrorToString(
-                                error
-                            );
-
-
                     message =
                         [NSString
                             stringWithFormat:
-                                @"Discord 切断 (%s:%d)",
-                                errorText.c_str(),
+                                @"Discord 切断 (%d)",
                                 errorDetail
                         ];
                 }
@@ -730,14 +741,10 @@ static void DeleteTokenPayload(
 
 
                 /*
-                 IMPORTANT
+                 一時切断でTokenを消さない。
 
-                 UnexpectedCloseだからといって
-                 RefreshTokenはしない。
-
-                 通信瞬断でもUnexpectedCloseは
-                 起こり得るため、
-                 まず通常Reconnectを試す。
+                 SDKが完全Disconnectedまで落ちた場合だけ、
+                 少し待って通常Reconnectを試す。
                  */
                 dispatch_after(
 
@@ -781,10 +788,6 @@ static void DeleteTokenPayload(
             }
 
 
-            /*
-             本当にToken期限通知が来た時だけ
-             RefreshTokenを行う。
-             */
             dispatch_async(
                 dispatch_get_main_queue(),
                 ^{
@@ -1046,6 +1049,9 @@ static void DeleteTokenPayload(
             .timeIntervalSince1970;
 
 
+    /*
+     有効期限が24時間以内ならRefresh。
+     */
     const double refreshWindow =
         24.0 *
         60.0 *
@@ -1076,6 +1082,7 @@ static void DeleteTokenPayload(
             text:
                 @"DISCORD_APP_ID が未設定"
         ];
+
 
         return;
     }
@@ -1144,9 +1151,6 @@ static void DeleteTokenPayload(
     }
 
 
-    /*
-     SDKが接続処理中なら邪魔しない。
-     */
     if (
         status ==
             discordpp::Client::Status::Connecting
@@ -1187,6 +1191,7 @@ static void DeleteTokenPayload(
             refreshStoredToken
         ];
 
+
         return;
     }
 
@@ -1198,6 +1203,7 @@ static void DeleteTokenPayload(
         [self
             applyStoredAccessTokenAndConnect
         ];
+
 
         return;
     }
@@ -1211,13 +1217,11 @@ static void DeleteTokenPayload(
             refreshStoredToken
         ];
 
+
         return;
     }
 
 
-    /*
-     保存済み認証が無い時だけOAuth。
-     */
     [self
         beginAuthorization
     ];
@@ -1225,7 +1229,7 @@ static void DeleteTokenPayload(
 
 
 // MARK: =========================================
-// MARK: Restore Stored Access Token
+// MARK: Restore Token
 // MARK: =========================================
 
 
@@ -1350,7 +1354,8 @@ static void DeleteTokenPayload(
 
 
             selfRef->
-                _client->Connect();
+                _client->
+                Connect();
         }
     );
 }
@@ -1393,6 +1398,7 @@ static void DeleteTokenPayload(
         [self
             beginAuthorization
         ];
+
 
         return;
     }
@@ -1461,10 +1467,6 @@ static void DeleteTokenPayload(
                 );
 
 
-                /*
-                 一時エラーなら
-                 Tokenを消さずRetryAfterを尊重。
-                 */
                 if (
                     result.Retryable()
                 ) {
@@ -1501,10 +1503,6 @@ static void DeleteTokenPayload(
                 }
 
 
-                /*
-                 retry不可ならRefresh Tokenが
-                 本当に無効な可能性があるので再認証。
-                 */
                 [selfRef
                     clearStoredTokens
                 ];
@@ -1642,7 +1640,9 @@ static void DeleteTokenPayload(
 
                         NSLog(
                             @"Refreshed UpdateToken failed: %s",
-                            updateResult.ToString().c_str()
+                            updateResult
+                                .ToString()
+                                .c_str()
                         );
 
 
@@ -1719,11 +1719,11 @@ static void DeleteTokenPayload(
             (NSTimeInterval)delay {
 
     if (
-        delay < 1
+        delay < 1.0
     ) {
 
         delay =
-            1;
+            1.0;
     }
 
 
@@ -1750,7 +1750,7 @@ static void DeleteTokenPayload(
 
 
 // MARK: =========================================
-// MARK: Initial Authorization
+// MARK: Authorization
 // MARK: =========================================
 
 
@@ -1823,9 +1823,11 @@ static void DeleteTokenPayload(
 
         args,
 
-        [weakSelf,
-         verifier,
-         applicationID](
+        [
+            weakSelf,
+            verifier,
+            applicationID
+        ](
             discordpp::ClientResult result,
             std::string code,
             std::string redirectUri
@@ -1868,6 +1870,7 @@ static void DeleteTokenPayload(
                 selfRef->
                     _authorizationRunning =
                     NO;
+
 
                 return;
             }
@@ -1988,7 +1991,9 @@ static void DeleteTokenPayload(
 
                                 NSLog(
                                     @"Initial UpdateToken failed: %s",
-                                    updateResult.ToString().c_str()
+                                    updateResult
+                                        .ToString()
+                                        .c_str()
                                 );
 
 
@@ -2079,10 +2084,6 @@ static void DeleteTokenPayload(
     }
 
 
-    /*
-     Discord SDK自身が処理中なら
-     Connectを連打しない。
-     */
     if (
         status ==
             discordpp::Client::Status::Connecting
@@ -2128,15 +2129,14 @@ static void DeleteTokenPayload(
             refreshStoredToken
         ];
 
+
         return;
     }
 
 
-    /*
-     SDK内に有効Tokenあり。
-     */
     if (
-        _client->IsAuthenticated()
+        _client->
+            IsAuthenticated()
     ) {
 
         [self
@@ -2147,16 +2147,14 @@ static void DeleteTokenPayload(
         ];
 
 
-        _client->Connect();
+        _client->
+            Connect();
 
 
         return;
     }
 
 
-    /*
-     Keychain access token
-     */
     if (
         !_accessToken.empty()
     ) {
@@ -2170,9 +2168,6 @@ static void DeleteTokenPayload(
     }
 
 
-    /*
-     refresh tokenだけある場合
-     */
     if (
         !_refreshToken.empty()
     ) {
@@ -2186,9 +2181,6 @@ static void DeleteTokenPayload(
     }
 
 
-    /*
-     認証情報が本当に無い時だけOAuth。
-     */
     [self
         beginAuthorization
     ];
@@ -2226,12 +2218,6 @@ static void DeleteTokenPayload(
                    endTimestamp:
             (int64_t)endTimestamp {
 
-    /*
-     最新Presenceのversionを更新。
-
-     曲A送信中に曲Bが来ても、
-     Bを最新として保持する。
-     */
     _presenceVersion +=
         1;
 
@@ -2282,13 +2268,6 @@ static void DeleteTokenPayload(
         endTimestamp;
 
 
-    /*
-     送信中ならここでは新しいHTTP/RPCを
-     重ねない。
-
-     現在の送信が終わったあと
-     最新versionだけ送る。
-     */
     [self
         sendPendingPresenceIfPossible
     ];
@@ -2303,10 +2282,6 @@ static void DeleteTokenPayload(
 - (void)schedulePresenceRetry:
             (NSTimeInterval)delay {
 
-    /*
-     既に再送予定があるなら
-     タイマーを増殖させない。
-     */
     if (
         _presenceRetryScheduled
     ) {
@@ -2369,11 +2344,6 @@ static void DeleteTokenPayload(
                 NO;
 
 
-            /*
-             その間に停止していたら
-             pending.valid == falseなので
-             何も送らない。
-             */
             [selfRef
                 sendPendingPresenceIfPossible
             ];
@@ -2405,10 +2375,6 @@ static void DeleteTokenPayload(
     }
 
 
-    /*
-     Discord接続が本当にReadyでなければ
-     Presenceは送らずpendingだけ保持。
-     */
     if (
         _client->GetStatus() !=
         discordpp::Client::Status::Ready
@@ -2418,10 +2384,6 @@ static void DeleteTokenPayload(
     }
 
 
-    /*
-     既に1件送信中なら
-     同時にUpdateRichPresenceしない。
-     */
     if (
         _presenceUpdateInFlight
     ) {
@@ -2430,9 +2392,6 @@ static void DeleteTokenPayload(
     }
 
 
-    /*
-     RetryAfter待ち中も送らない。
-     */
     if (
         _presenceRetryScheduled
     ) {
@@ -2456,6 +2415,27 @@ static void DeleteTokenPayload(
     discordpp::Activity activity;
 
 
+    // MARK: =====================================
+    // MARK: Displayed App Name
+    // MARK: =====================================
+
+    /*
+     超重要。
+
+     スクショで
+
+         diさんを再生中
+
+     になっていた
+     「diさん」の部分。
+
+     ここを Apple Music に固定する。
+     */
+    activity.SetName(
+        "Apple Music"
+    );
+
+
     // MARK: Activity Type
 
     activity.SetType(
@@ -2465,9 +2445,8 @@ static void DeleteTokenPayload(
 
 
     /*
-     Discordプロフィールの
-     ステータス表示をApplication名ではなく
-     Details = 曲名 にする。
+     プロフィールのステータス文字列は
+     Details = 曲名 を使う。
      */
     activity.SetStatusDisplayType(
         discordpp::
@@ -2475,7 +2454,7 @@ static void DeleteTokenPayload(
     );
 
 
-    // MARK: Details
+    // MARK: Track title
 
     if (
         presence.title.length() >= 2
@@ -2488,10 +2467,8 @@ static void DeleteTokenPayload(
     } else {
 
         /*
-         Discordの文字列validation対策。
-
-         1文字タイトルでも
-         Presence全体を失敗させない。
+         1文字曲名でもDiscordの
+         2文字以上validationに引っかからないようにする。
          */
         std::string safeTitle =
             "♪ " +
@@ -2504,7 +2481,7 @@ static void DeleteTokenPayload(
     }
 
 
-    // MARK: State / Artist
+    // MARK: Artist
 
     if (
         presence.artist.length() >= 2
@@ -2529,7 +2506,7 @@ static void DeleteTokenPayload(
     }
 
 
-    // MARK: Details URL
+    // MARK: Song URL
 
     if (
         presence.songURL.has_value()
@@ -2621,14 +2598,8 @@ static void DeleteTokenPayload(
     }
 
 
-    /*
-     Album hover text。
+    // MARK: Album
 
-     短すぎる値は送らない。
-     長い値も今回は無理にsubstrせず、
-     validationエラー回避のため送らない。
-     UTF-8の途中切断も防げる。
-     */
     if (
         presence.album.length() >= 2 &&
         presence.album.length() <= 128
@@ -2638,16 +2609,6 @@ static void DeleteTokenPayload(
             presence.album
         );
     }
-
-
-    /*
-     ジャケットURLのクリックURLは
-     いったん送らない。
-
-     DetailsUrlだけでApple Musicへ
-     開けるので、
-     Presence validation要因を1個減らす。
-     */
 
 
     activity.SetAssets(
@@ -2663,7 +2624,10 @@ static void DeleteTokenPayload(
 
         activity,
 
-        [weakSelf, sentVersion](
+        [
+            weakSelf,
+            sentVersion
+        ](
             discordpp::ClientResult result
         ) {
 
@@ -2676,9 +2640,6 @@ static void DeleteTokenPayload(
             }
 
 
-            /*
-             状態管理はmain queueへ集約。
-             */
             dispatch_async(
                 dispatch_get_main_queue(),
                 ^{
@@ -2688,14 +2649,14 @@ static void DeleteTokenPayload(
                         NO;
 
 
-                    // MARK: SUCCESS
+                    // MARK: Success
 
                     if (
                         result.Successful()
                     ) {
 
                         /*
-                         送信中に別の曲が来ていたら
+                         送信中に次の曲へ変わった場合、
                          最新版を1回だけ続けて送る。
                          */
                         if (
@@ -2718,7 +2679,7 @@ static void DeleteTokenPayload(
                     }
 
 
-                    // MARK: FAILURE LOG
+                    // MARK: Failure logging
 
                     NSLog(
                         @"UpdateRichPresence FAILED"
@@ -2727,19 +2688,24 @@ static void DeleteTokenPayload(
 
                     NSLog(
                         @"Result: %s",
-                        result.ToString().c_str()
+                        result
+                            .ToString()
+                            .c_str()
                     );
 
 
                     NSLog(
                         @"Error: %s",
-                        result.Error().c_str()
+                        result
+                            .Error()
+                            .c_str()
                     );
 
 
                     NSLog(
                         @"ErrorCode: %d",
-                        result.ErrorCode()
+                        result
+                            .ErrorCode()
                     );
 
 
@@ -2753,7 +2719,8 @@ static void DeleteTokenPayload(
 
                     NSLog(
                         @"RetryAfter: %.2f",
-                        result.RetryAfter()
+                        result
+                            .RetryAfter()
                     );
 
 
@@ -2767,33 +2734,30 @@ static void DeleteTokenPayload(
 
                         NSLog(
                             @"ResponseBody: %s",
-                            responseBody.c_str()
+                            responseBody
+                                .c_str()
                         );
                     }
 
 
                     /*
-                     超重要。
+                     Presence送信失敗と
+                     Discord接続切断は別物。
 
-                     Presence失敗はDiscord切断ではない。
-
-                     ここで notifyReady:NO は
+                     ここではnotifyReady:NOを
                      絶対に呼ばない。
-
-                     つまりUIが
-                     「Presence 再送待ち」
-                     に切り替わることもない。
                      */
 
 
-                    // MARK: RETRYABLE
+                    // MARK: Retryable
 
                     if (
                         result.Retryable()
                     ) {
 
                         NSTimeInterval delay =
-                            result.RetryAfter();
+                            result
+                                .RetryAfter();
 
 
                         if (
@@ -2816,11 +2780,12 @@ static void DeleteTokenPayload(
 
 
                     /*
-                     Validationエラー等は
-                     Retryable == false。
+                     Validation失敗など
+                     retry不可の同一Presenceは
+                     無限再送しない。
 
-                     同じ壊れたPresenceを
-                     無限連打しない。
+                     ただし送信中に曲が変わっていれば
+                     新しい曲だけ送る。
                      */
                     if (
                         selfRef->
@@ -2832,11 +2797,6 @@ static void DeleteTokenPayload(
                         sentVersion
                     ) {
 
-                        /*
-                         ただし送信失敗中に
-                         曲が変わっていた場合だけ、
-                         新しい曲は別物なので送る。
-                         */
                         [selfRef
                             sendPendingPresenceIfPossible
                         ];
@@ -2855,9 +2815,6 @@ static void DeleteTokenPayload(
 
 - (void)clearPresence {
 
-    /*
-     送信待ちのPresenceを無効化。
-     */
     _presenceVersion +=
         1;
 
@@ -2887,7 +2844,8 @@ static void DeleteTokenPayload(
     }
 
 
-    _client->ClearRichPresence();
+    _client->
+        ClearRichPresence();
 }
 
 
