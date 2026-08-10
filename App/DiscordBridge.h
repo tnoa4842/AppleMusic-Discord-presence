@@ -15,6 +15,8 @@ typedef void (^DiscordStatusChangedBlock)(BOOL ready, NSString *text);
 
 - (void)runCallbacks;
 
+- (void)reconnectIfNeeded;
+
 - (void)updatePresenceWithTitle:(NSString *)title
                          artist:(NSString *)artist
                           album:(NSString *)album
