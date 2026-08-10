@@ -1,6 +1,7 @@
 import Foundation
 import MediaPlayer
 import UIKit
+import BackgroundTasks
 
 @MainActor
 final class PresenceViewModel: ObservableObject {
@@ -12,81 +13,114 @@ final class PresenceViewModel: ObservableObject {
     @Published var isDiscordReady = false
     @Published var autoUpdate = true
 
-    private let player =
-        MPMusicPlayerController.systemMusicPlayer
+    private let player = MPMusicPlayerController.systemMusicPlayer
 
     private var observers: [NSObjectProtocol] = []
 
+    // Discord SDK の callback を回す
     private var callbackTimer: Timer?
 
-    private var lastArtworkStoreID: String?
+    // 曲変更通知を取りこぼした場合の保険
+    private var musicPollTimer: Timer?
 
-    private var cachedArtworkURL: String?
+    // バックグラウンドに入った直後の猶予時間を利用
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+
+    private var lastTrackKey = ""
+    private var lastPlaybackState: MPMusicPlaybackState = .stopped
+
+    private var hasStarted = false
+
+    // MARK: - Start
 
     func start() async {
 
-        let auth =
-            await MPMediaLibrary.requestAuthorization()
+        guard !hasStarted else {
+            syncFromMusic(force: true)
+            return
+        }
+
+        hasStarted = true
+
+        let auth = await MPMediaLibrary.requestAuthorization()
 
         guard auth == .authorized else {
             musicStatus = "Apple Music 権限なし"
             return
         }
 
-        DiscordBridge.shared().onStatusChanged = {
-            [weak self] ready, text in
+        setupDiscordCallback()
+
+        player.beginGeneratingPlaybackNotifications()
+
+        setupMusicNotifications()
+        setupApplicationNotifications()
+        setupBackgroundRefreshNotification()
+
+        startForegroundTimers()
+
+        syncFromMusic(force: true)
+
+        BackgroundRefreshManager.schedule()
+    }
+
+    // MARK: - Discord
+
+    private func setupDiscordCallback() {
+
+        DiscordBridge.shared().onStatusChanged = { [weak self] ready, text in
 
             Task { @MainActor in
 
-                self?.isDiscordReady = ready
-                self?.discordStatus = text
+                guard let self else { return }
+
+                self.isDiscordReady = ready
+                self.discordStatus = text
 
                 if ready {
-                    self?.pushCurrentTrack()
+                    self.pushCurrentTrack(force: true)
                 }
             }
         }
+    }
 
-        player.beginGeneratingPlaybackNotifications()
+    func connectDiscord() {
+
+        let appID = GeneratedConfig.discordApplicationID
+
+        guard appID != 0 else {
+            discordStatus = "DISCORD_APP_ID が未設定"
+            return
+        }
+
+        discordStatus = "Discord 接続中"
+
+        DiscordBridge.shared().start(
+            withApplicationID: appID
+        )
+    }
+
+    // MARK: - Music Notifications
+
+    private func setupMusicNotifications() {
 
         observe(
             .MPMusicPlayerControllerNowPlayingItemDidChange
         ) { [weak self] in
 
-            self?.syncFromMusic()
+            guard let self else { return }
+
+            self.syncFromMusic(force: true)
         }
 
         observe(
             .MPMusicPlayerControllerPlaybackStateDidChange
         ) { [weak self] in
 
-            self?.syncFromMusic()
+            guard let self else { return }
+
+            self.syncFromMusic(force: true)
         }
-
-        observers.append(
-            NotificationCenter.default.addObserver(
-                forName:
-                    UIApplication.didBecomeActiveNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-
-                Task { @MainActor in
-                    self?.syncFromMusic()
-                }
-            }
-        )
-
-        callbackTimer =
-            Timer.scheduledTimer(
-                withTimeInterval: 0.20,
-                repeats: true
-            ) { _ in
-
-                DiscordBridge.shared().runCallbacks()
-            }
-
-        syncFromMusic()
     }
 
     private func observe(
@@ -94,41 +128,217 @@ final class PresenceViewModel: ObservableObject {
         action: @escaping @MainActor () -> Void
     ) {
 
+        let observer = NotificationCenter.default.addObserver(
+            forName: name,
+            object: player,
+            queue: .main
+        ) { _ in
+
+            Task { @MainActor in
+                action()
+            }
+        }
+
+        observers.append(observer)
+    }
+
+    // MARK: - App Notifications
+
+    private func setupApplicationNotifications() {
+
         observers.append(
+
             NotificationCenter.default.addObserver(
-                forName: name,
-                object: player,
+                forName: UIApplication.didBecomeActiveNotification,
+                object: nil,
                 queue: .main
-            ) { _ in
+            ) { [weak self] _ in
 
                 Task { @MainActor in
-                    action()
+
+                    guard let self else { return }
+
+                    self.endBackgroundTask()
+
+                    self.startForegroundTimers()
+
+                    self.syncFromMusic(force: true)
+
+                    BackgroundRefreshManager.schedule()
+                }
+            }
+        )
+
+        observers.append(
+
+            NotificationCenter.default.addObserver(
+                forName: UIApplication.willEnterForegroundNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+
+                Task { @MainActor in
+                    self?.syncFromMusic(force: true)
+                }
+            }
+        )
+
+        observers.append(
+
+            NotificationCenter.default.addObserver(
+                forName: UIApplication.didEnterBackgroundNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+
+                Task { @MainActor in
+
+                    guard let self else { return }
+
+                    self.beginBackgroundTask()
+
+                    self.syncFromMusic(force: true)
+
+                    BackgroundRefreshManager.schedule()
+                }
+            }
+        )
+
+        observers.append(
+
+            NotificationCenter.default.addObserver(
+                forName: UIApplication.willResignActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+
+                Task { @MainActor in
+                    self?.syncFromMusic(force: true)
                 }
             }
         )
     }
 
-    func connectDiscord() {
+    // MARK: - BGTask Notification
 
-        let appID =
-            GeneratedConfig.discordApplicationID
+    private func setupBackgroundRefreshNotification() {
 
-        guard appID != 0 else {
+        observers.append(
 
-            discordStatus =
-                "DISCORD_APP_ID が未設定"
+            NotificationCenter.default.addObserver(
+                forName: .appleMusicDiscordBackgroundRefresh,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
 
-            return
-        }
+                Task { @MainActor in
 
-        DiscordBridge.shared().start(
-            withApplicationID: appID
+                    guard let self else { return }
+
+                    self.runBackgroundRefresh()
+                }
+            }
         )
     }
 
-    func syncFromMusic() {
+    func runBackgroundRefresh() {
 
-        switch player.playbackState {
+        // Discord SDK callback を何回か処理
+        DiscordBridge.shared().runCallbacks()
+
+        syncFromMusic(force: true)
+
+        BackgroundRefreshManager.schedule()
+    }
+
+    // MARK: - Foreground Timers
+
+    private func startForegroundTimers() {
+
+        callbackTimer?.invalidate()
+        musicPollTimer?.invalidate()
+
+        // Discord SDK callback
+        callbackTimer = Timer.scheduledTimer(
+            withTimeInterval: 0.20,
+            repeats: true
+        ) { _ in
+
+            DiscordBridge.shared().runCallbacks()
+        }
+
+        // MusicPlayer の通知取りこぼし対策
+        musicPollTimer = Timer.scheduledTimer(
+            withTimeInterval: 2.0,
+            repeats: true
+        ) { [weak self] _ in
+
+            Task { @MainActor in
+                self?.syncFromMusic(force: false)
+            }
+        }
+    }
+
+    // MARK: - Background Grace Period
+
+    private func beginBackgroundTask() {
+
+        endBackgroundTask()
+
+        backgroundTask = UIApplication.shared.beginBackgroundTask(
+            withName: "AppleMusicDiscordPresence"
+        ) { [weak self] in
+
+            Task { @MainActor in
+                self?.endBackgroundTask()
+            }
+        }
+
+        // バックグラウンドへ移行した直後は
+        // iOSが許す間だけ監視を継続する。
+        startBackgroundPolling()
+    }
+
+    private func startBackgroundPolling() {
+
+        musicPollTimer?.invalidate()
+
+        musicPollTimer = Timer.scheduledTimer(
+            withTimeInterval: 2.0,
+            repeats: true
+        ) { [weak self] _ in
+
+            Task { @MainActor in
+
+                guard let self else { return }
+
+                DiscordBridge.shared().runCallbacks()
+
+                self.syncFromMusic(force: false)
+            }
+        }
+    }
+
+    private func endBackgroundTask() {
+
+        guard backgroundTask != .invalid else {
+            return
+        }
+
+        UIApplication.shared.endBackgroundTask(
+            backgroundTask
+        )
+
+        backgroundTask = .invalid
+    }
+
+    // MARK: - Sync Music
+
+    func syncFromMusic(force: Bool = false) {
+
+        let playbackState = player.playbackState
+
+        switch playbackState {
 
         case .playing:
             musicStatus = "再生中"
@@ -139,7 +349,16 @@ final class PresenceViewModel: ObservableObject {
         case .stopped:
             musicStatus = "停止"
 
-        default:
+        case .interrupted:
+            musicStatus = "中断"
+
+        case .seekingForward:
+            musicStatus = "早送り"
+
+        case .seekingBackward:
+            musicStatus = "巻き戻し"
+
+        @unknown default:
             musicStatus = "その他"
         }
 
@@ -148,39 +367,89 @@ final class PresenceViewModel: ObservableObject {
             trackTitle = "再生中の曲なし"
             artist = ""
 
-            lastArtworkStoreID = nil
-            cachedArtworkURL = nil
+            let stateChanged =
+                playbackState != lastPlaybackState
 
-            if autoUpdate && isDiscordReady {
+            lastPlaybackState = playbackState
+
+            if autoUpdate &&
+                isDiscordReady &&
+                (force || stateChanged) {
+
                 clearPresence()
             }
+
+            lastTrackKey = ""
 
             return
         }
 
-        trackTitle =
-            item.title ?? "Unknown Track"
+        let title = item.title ?? "Unknown Track"
+        let artistName = item.artist ?? "Unknown Artist"
+        let album = item.albumTitle ?? ""
 
-        artist =
-            item.artist ?? "Unknown Artist"
+        let storeID = item.playbackStoreID
 
-        if autoUpdate && isDiscordReady {
-            pushCurrentTrack()
+        let persistentID =
+            String(item.persistentID)
+
+        let trackKey =
+            "\(storeID)|\(persistentID)|\(title)|\(artistName)|\(album)"
+
+        let trackChanged =
+            trackKey != lastTrackKey
+
+        let stateChanged =
+            playbackState != lastPlaybackState
+
+        trackTitle = title
+        artist = artistName
+
+        lastTrackKey = trackKey
+        lastPlaybackState = playbackState
+
+        guard autoUpdate else {
+            return
         }
-    }
-
-    func pushCurrentTrack() {
 
         guard isDiscordReady else {
             return
         }
 
-        guard
-            player.playbackState == .playing,
-            let item = player.nowPlayingItem
-        else {
+        if force || trackChanged || stateChanged {
+
+            if playbackState == .playing {
+
+                pushCurrentTrack(
+                    force: true
+                )
+
+            } else {
+
+                clearPresence()
+            }
+        }
+    }
+
+    // MARK: - Push Presence
+
+    func pushCurrentTrack(force: Bool = false) {
+
+        guard isDiscordReady else {
+            return
+        }
+
+        guard player.playbackState == .playing else {
 
             clearPresence()
+
+            return
+        }
+
+        guard let item = player.nowPlayingItem else {
+
+            clearPresence()
+
             return
         }
 
@@ -206,14 +475,22 @@ final class PresenceViewModel: ObservableObject {
             Date().timeIntervalSince1970
 
         let start =
-            Int64(now - elapsed)
+            Int64(
+                now - elapsed
+            )
 
-        let end =
-            duration > 0
-            ? Int64(
+        let end: Int64
+
+        if duration > 0 {
+
+            end = Int64(
                 now - elapsed + duration
             )
-            : 0
+
+        } else {
+
+            end = 0
+        }
 
         let storeID =
             item.playbackStoreID
@@ -221,207 +498,72 @@ final class PresenceViewModel: ObservableObject {
         let songURL: String?
 
         if storeID.isEmpty {
+
             songURL = nil
+
         } else {
+
             songURL =
                 "https://music.apple.com/song/\(storeID)"
         }
 
-        /*
-         まず現在キャッシュしている
-         ジャケットURLでPresenceを送る。
-        */
-
-        if storeID == lastArtworkStoreID,
-           let artworkURL = cachedArtworkURL {
-
-            sendPresence(
-                title: title,
-                artist: artistName,
-                album: album,
-                songURL: songURL,
-                artworkURL: artworkURL,
-                start: start,
-                end: end
-            )
-
-            return
-        }
-
-        /*
-         曲が変わったのでキャッシュをリセット。
-        */
-
-        lastArtworkStoreID = storeID
-        cachedArtworkURL = nil
-
-        /*
-         とりあえず画像なしでPresenceを送信。
-         その後ジャケット取得が成功したら更新する。
-        */
-
-        sendPresence(
+        DiscordBridge.shared().updatePresence(
             title: title,
             artist: artistName,
             album: album,
             songURL: songURL,
-            artworkURL: nil,
-            start: start,
-            end: end
-        )
-
-        guard !storeID.isEmpty else {
-            return
-        }
-
-        Task {
-            await fetchArtworkAndUpdate(
-                storeID: storeID,
-                title: title,
-                artist: artistName,
-                album: album,
-                songURL: songURL,
-                start: start,
-                end: end
-            )
-        }
-    }
-
-    private func sendPresence(
-        title: String,
-        artist: String,
-        album: String,
-        songURL: String?,
-        artworkURL: String?,
-        start: Int64,
-        end: Int64
-    ) {
-
-        DiscordBridge.shared().updatePresence(
-            title: title,
-            artist: artist,
-            album: album,
-            songURL: songURL,
-            artworkURL: artworkURL,
             startTimestamp: start,
             endTimestamp: end
         )
+
+        // SDKによってはUpdateRichPresence後も
+        // callback処理が必要なので即回す
+        DiscordBridge.shared().runCallbacks()
     }
 
-    private func fetchArtworkAndUpdate(
-        storeID: String,
-        title: String,
-        artist: String,
-        album: String,
-        songURL: String?,
-        start: Int64,
-        end: Int64
-    ) async {
-
-        guard let url = URL(
-            string:
-                "https://itunes.apple.com/lookup?id=\(storeID)&country=JP"
-        ) else {
-            return
-        }
-
-        do {
-
-            let (data, _) =
-                try await URLSession.shared.data(
-                    from: url
-                )
-
-            let response =
-                try JSONDecoder().decode(
-                    ITunesLookupResponse.self,
-                    from: data
-                )
-
-            guard
-                let artwork =
-                    response.results.first?.artworkUrl100
-            else {
-                return
-            }
-
-            /*
-             Appleの100x100 URLを
-             高解像度に変更。
-            */
-
-            let highResolution =
-                artwork.replacingOccurrences(
-                    of: "100x100",
-                    with: "600x600"
-                )
-
-            /*
-             取得中に別の曲へ変わっていたら
-             古いジャケットを送らない。
-            */
-
-            guard
-                player.nowPlayingItem?.playbackStoreID
-                    == storeID
-            else {
-                return
-            }
-
-            cachedArtworkURL =
-                highResolution
-
-            lastArtworkStoreID =
-                storeID
-
-            sendPresence(
-                title: title,
-                artist: artist,
-                album: album,
-                songURL: songURL,
-                artworkURL: highResolution,
-                start: start,
-                end: end
-            )
-
-        } catch {
-
-            print(
-                "Artwork取得失敗:",
-                error
-            )
-        }
-    }
+    // MARK: - Clear
 
     func clearPresence() {
 
-        DiscordBridge.shared()
-            .clearPresence()
+        guard isDiscordReady else {
+            return
+        }
+
+        DiscordBridge.shared().clearPresence()
+
+        DiscordBridge.shared().runCallbacks()
     }
+
+    // MARK: - Manual Refresh
+
+    func refreshNow() {
+
+        DiscordBridge.shared().runCallbacks()
+
+        syncFromMusic(force: true)
+    }
+
+    // MARK: - Cleanup
 
     deinit {
 
         player.endGeneratingPlaybackNotifications()
 
         callbackTimer?.invalidate()
+        musicPollTimer?.invalidate()
 
         for observer in observers {
-            NotificationCenter.default
-                .removeObserver(observer)
+
+            NotificationCenter.default.removeObserver(
+                observer
+            )
+        }
+
+        if backgroundTask != .invalid {
+
+            UIApplication.shared.endBackgroundTask(
+                backgroundTask
+            )
         }
     }
-}
-
-private struct ITunesLookupResponse:
-    Decodable {
-
-    let results:
-        [ITunesLookupResult]
-}
-
-private struct ITunesLookupResult:
-    Decodable {
-
-    let artworkUrl100:
-        String?
 }
