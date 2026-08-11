@@ -16,17 +16,23 @@ final class BackgroundLocationKeeper:
 
 
     /*
-     iOS 17以降。
-
-     When In Useでも
-     Background Location Sessionを
-     明示的に維持する。
+     iOS 17以降で
+     When In UseのままBackground Locationを
+     継続するためのSession。
      */
     private var backgroundActivitySession:
         CLBackgroundActivitySession?
 
 
     private var started =
+        false
+
+
+    /*
+     Always昇格要求を
+     同じ起動中に何度も投げないため。
+     */
+    private var alwaysUpgradeRequested =
         false
 
 
@@ -40,24 +46,14 @@ final class BackgroundLocationKeeper:
 
 
         /*
-         重要。
+         位置そのものが目的ではないので
+         GPS最高精度までは要求しない。
 
-         前回の3km精度はやめる。
-
-         Appleの推奨条件に合わせて
-         100m以上の精度にする。
+         ただし前回の3kmよりは
+         更新されやすい100m精度。
          */
         manager.desiredAccuracy =
             kCLLocationAccuracyHundredMeters
-
-
-        /*
-         distanceFilterは設定しない。
-
-         前回入れていた
-         kCLDistanceFilterNone も
-         今回は明示設定しない。
-         */
 
 
         manager.activityType =
@@ -65,7 +61,7 @@ final class BackgroundLocationKeeper:
 
 
         /*
-         iOSに自動停止させない。
+         iOSによる自動Pauseを防ぐ。
          */
         manager
             .pausesLocationUpdatesAutomatically =
@@ -73,8 +69,8 @@ final class BackgroundLocationKeeper:
 
 
         /*
-         Background Location使用中を
-         ユーザーに表示。
+         Background Location中であることを
+         iOS上に表示可能にする。
          */
         manager
             .showsBackgroundLocationIndicator =
@@ -101,58 +97,121 @@ final class BackgroundLocationKeeper:
         }
 
 
+        let status =
+            manager.authorizationStatus
+
+
         print(
-            "[LocationKeeper] Authorization:",
-            manager.authorizationStatus.rawValue
+            "[LocationKeeper] start() authorization:",
+            status.rawValue
         )
 
 
-        switch manager.authorizationStatus {
+        switch status {
+
+        // MARK: 初回
 
         case .notDetermined:
 
             /*
-             今回はAlwaysを要求。
+             重要。
 
-             iOS側の仕様により
-             最初は「使用中」になる場合もある。
+             いきなりAlwaysではなく
+             まず「このAppの使用中」を要求。
+
+             Apple公式の推奨順序。
              */
 
+            print(
+                "[LocationKeeper] Requesting WHEN IN USE"
+            )
+
+
             manager
-                .requestAlwaysAuthorization()
+                .requestWhenInUseAuthorization()
 
 
-        case .authorizedWhenInUse,
-             .authorizedAlways:
+        // MARK: 使用中許可済み
+
+        case .authorizedWhenInUse:
+
+            /*
+             まず位置情報更新を開始。
+
+             この時点でBackground Locationを
+             有効にする。
+             */
 
             startLocationUpdates()
 
 
-        case .denied,
-             .restricted:
+            /*
+             その後にAlwaysへ昇格要求。
+
+             Alwaysが取れなくても
+             Continuous Background Locationは
+             When In Useの状態で動作可能。
+             */
+
+            requestAlwaysUpgradeIfNeeded()
+
+
+        // MARK: 常に許可済み
+
+        case .authorizedAlways:
+
+            startLocationUpdates()
+
+
+        // MARK: 拒否
+
+        case .denied:
 
             print(
-                "[LocationKeeper] Location permission denied"
+                "[LocationKeeper] Location permission DENIED"
+            )
+
+
+        case .restricted:
+
+            print(
+                "[LocationKeeper] Location permission RESTRICTED"
             )
 
 
         @unknown default:
 
-            break
+            print(
+                "[LocationKeeper] Unknown authorization status"
+            )
         }
     }
 
 
     // MARK: =====================================
-    // MARK: Start Updating
+    // MARK: Start Location Updates
     // MARK: =====================================
 
     private func startLocationUpdates() {
 
         guard !started else {
+
+            /*
+             既に開始済みでも
+             Sessionが消えていたら作り直す。
+             */
+
+            createBackgroundSessionIfNeeded()
+
             return
         }
 
+
+        /*
+         IPAに本当に
+         UIBackgroundModes/locationが
+         入っているか実行時チェック。
+         */
 
         let modes =
             Bundle.main
@@ -177,59 +236,30 @@ final class BackgroundLocationKeeper:
         else {
 
             /*
+             location無しで
              allowsBackgroundLocationUpdates = true
-             をlocation無しで設定すると
-             iOSがアプリを終了させるため、
-             ここで止める。
+             を使うと危険なので止める。
              */
 
             print(
-                "[LocationKeeper] ERROR: location background mode missing"
+                "[LocationKeeper] ERROR: UIBackgroundModes/location missing"
             )
 
             return
         }
 
 
-        // MARK: Background Activity Session
-
-        if #available(
-            iOS 17.0,
-            *
-        ) {
-
-            /*
-             強参照を保持。
-
-             When In Useの状態でも
-             Background Activity Sessionを
-             継続させる。
-             */
-
-            if backgroundActivitySession ==
-                nil {
-
-                backgroundActivitySession =
-                    CLBackgroundActivitySession()
+        createBackgroundSessionIfNeeded()
 
 
-                print(
-                    "[LocationKeeper] CLBackgroundActivitySession CREATED"
-                )
-            }
-        }
-
-
-        // MARK: Background updates
+        /*
+         Continuous Background LocationをON。
+         */
 
         manager
             .allowsBackgroundLocationUpdates =
             true
 
-
-        /*
-         念のため改めて設定。
-         */
 
         manager.desiredAccuracy =
             kCLLocationAccuracyHundredMeters
@@ -246,9 +276,7 @@ final class BackgroundLocationKeeper:
 
 
         /*
-         重要。
-
-         必ずアプリ前面時にここへ到達させる。
+         必ずForegroundで開始する。
          */
 
         manager
@@ -260,13 +288,114 @@ final class BackgroundLocationKeeper:
 
 
         print(
+            "[LocationKeeper] ================================="
+        )
+
+        print(
             "[LocationKeeper] CONTINUOUS LOCATION STARTED"
+        )
+
+        print(
+            "[LocationKeeper] authorization:",
+            manager.authorizationStatus.rawValue
+        )
+
+        print(
+            "[LocationKeeper] background enabled:",
+            manager.allowsBackgroundLocationUpdates
+        )
+
+        print(
+            "[LocationKeeper] ================================="
         )
     }
 
 
     // MARK: =====================================
-    // MARK: Authorization Changed
+    // MARK: Background Activity Session
+    // MARK: =====================================
+
+    private func createBackgroundSessionIfNeeded() {
+
+        if #available(
+            iOS 17.0,
+            *
+        ) {
+
+            guard
+                backgroundActivitySession ==
+                nil
+            else {
+
+                return
+            }
+
+
+            /*
+             強参照として保持する。
+
+             When In Use状態でも、
+             アプリをBackgroundで
+             in-useとして扱うためのSession。
+             */
+
+            backgroundActivitySession =
+                CLBackgroundActivitySession()
+
+
+            print(
+                "[LocationKeeper] CLBackgroundActivitySession CREATED"
+            )
+        }
+    }
+
+
+    // MARK: =====================================
+    // MARK: Request Always
+    // MARK: =====================================
+
+    private func requestAlwaysUpgradeIfNeeded() {
+
+        guard
+            manager.authorizationStatus ==
+            .authorizedWhenInUse
+        else {
+
+            return
+        }
+
+
+        guard
+            !alwaysUpgradeRequested
+        else {
+
+            return
+        }
+
+
+        alwaysUpgradeRequested =
+            true
+
+
+        /*
+         まずWhen In Useを取得した後に
+         Alwaysへ昇格を要求する。
+
+         Apple公式が要求している順序。
+         */
+
+        print(
+            "[LocationKeeper] Requesting ALWAYS upgrade"
+        )
+
+
+        manager
+            .requestAlwaysAuthorization()
+    }
+
+
+    // MARK: =====================================
+    // MARK: Authorization Callback
     // MARK: =====================================
 
     func locationManagerDidChangeAuthorization(
@@ -274,35 +403,85 @@ final class BackgroundLocationKeeper:
             CLLocationManager
     ) {
 
+        let status =
+            manager.authorizationStatus
+
+
         print(
             "[LocationKeeper] Authorization changed:",
-            manager.authorizationStatus.rawValue
+            status.rawValue
         )
 
 
-        switch manager.authorizationStatus {
+        switch status {
 
-        case .authorizedWhenInUse,
-             .authorizedAlways:
+        // MARK: 使用中許可
+
+        case .authorizedWhenInUse:
+
+            /*
+             まず即座に位置情報更新開始。
+             */
 
             startLocationUpdates()
 
 
-        case .denied,
-             .restricted:
+            /*
+             そのあとAlwaysへ昇格。
+             */
+
+            requestAlwaysUpgradeIfNeeded()
+
+
+        // MARK: Always
+
+        case .authorizedAlways:
+
+            print(
+                "[LocationKeeper] ALWAYS AUTHORIZED"
+            )
+
+
+            startLocationUpdates()
+
+
+        // MARK: 未選択
+
+        case .notDetermined:
+
+            /*
+             delegate設定直後にも
+             呼ばれる場合がある。
+
+             ここでは勝手にダイアログを
+             二重表示しない。
+             */
+
+            break
+
+
+        // MARK: 拒否
+
+        case .denied:
 
             started =
                 false
 
 
             print(
-                "[LocationKeeper] Permission denied"
+                "[LocationKeeper] PERMISSION DENIED"
             )
 
 
-        case .notDetermined:
+        case .restricted:
 
-            break
+            started =
+                false
+
+
+            print(
+                "[LocationKeeper] PERMISSION RESTRICTED"
+            )
 
 
         @unknown default:
@@ -313,7 +492,7 @@ final class BackgroundLocationKeeper:
 
 
     // MARK: =====================================
-    // MARK: Location Updates
+    // MARK: Location Update
     // MARK: =====================================
 
     func locationManager(
@@ -324,10 +503,18 @@ final class BackgroundLocationKeeper:
     ) {
 
         /*
-         座標は保存・送信しない。
+         座標は一切保存しない。
+         サーバー送信もしない。
 
-         Discord SDK callbacksだけ
-         生存確認として回す。
+         今回必要なのは
+         Background Locationによる
+         実行継続だけ。
+         */
+
+
+        /*
+         Discord SDK callbackを
+         Location Updateのタイミングでも回す。
          */
 
         DiscordBridge
@@ -335,7 +522,7 @@ final class BackgroundLocationKeeper:
             .runCallbacks()
 
 
-        guard let location =
+        guard let latest =
             locations.last
         else {
 
@@ -347,13 +534,15 @@ final class BackgroundLocationKeeper:
             "[LocationKeeper] HEARTBEAT",
             Date(),
             "accuracy:",
-            location.horizontalAccuracy
+            latest.horizontalAccuracy,
+            "appState:",
+            applicationStateText()
         )
     }
 
 
     // MARK: =====================================
-    // MARK: Error
+    // MARK: Failure
     // MARK: =====================================
 
     func locationManager(
@@ -371,7 +560,7 @@ final class BackgroundLocationKeeper:
 
 
     // MARK: =====================================
-    // MARK: Pause / Resume
+    // MARK: Pause
     // MARK: =====================================
 
     func locationManagerDidPauseLocationUpdates(
@@ -385,6 +574,10 @@ final class BackgroundLocationKeeper:
     }
 
 
+    // MARK: =====================================
+    // MARK: Resume
+    // MARK: =====================================
+
     func locationManagerDidResumeLocationUpdates(
         _ manager:
             CLLocationManager
@@ -393,5 +586,45 @@ final class BackgroundLocationKeeper:
         print(
             "[LocationKeeper] RESUMED"
         )
+
+
+        DiscordBridge
+            .shared()
+            .runCallbacks()
+    }
+
+
+    // MARK: =====================================
+    // MARK: App State Debug
+    // MARK: =====================================
+
+    private func applicationStateText()
+        -> String
+    {
+
+        switch
+            UIApplication
+                .shared
+                .applicationState {
+
+        case .active:
+
+            return "ACTIVE"
+
+
+        case .inactive:
+
+            return "INACTIVE"
+
+
+        case .background:
+
+            return "BACKGROUND"
+
+
+        @unknown default:
+
+            return "UNKNOWN"
+        }
     }
 }
