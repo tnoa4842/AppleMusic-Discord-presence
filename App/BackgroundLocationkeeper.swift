@@ -2,6 +2,7 @@ import Foundation
 import CoreLocation
 import UIKit
 
+
 final class BackgroundLocationKeeper:
     NSObject,
     CLLocationManagerDelegate
@@ -9,50 +10,50 @@ final class BackgroundLocationKeeper:
     static let shared =
         BackgroundLocationKeeper()
 
+
     private let manager =
         CLLocationManager()
+
 
     private var started =
         false
 
+
     private override init() {
+
         super.init()
+
 
         manager.delegate =
             self
 
-        /*
-         Apple自身がバックグラウンドで
-         省電力に継続させる候補として挙げている精度。
-         */
+
         manager.desiredAccuracy =
             kCLLocationAccuracyThreeKilometers
+
 
         manager.distanceFilter =
             kCLDistanceFilterNone
 
+
         manager.activityType =
             .other
 
-        /*
-         自動停止させない。
-         */
+
         manager.pausesLocationUpdatesAutomatically =
             false
 
-        /*
-         Background Locationを許可。
-         Info.plist側にlocationが無い状態で
-         trueにするとクラッシュするので、
-         必ず後述のInfo.plist変更もセット。
-         */
-        manager.allowsBackgroundLocationUpdates =
-            true
 
         /*
-         使用中許可のままBackgroundへ行く場合、
-         青い位置情報インジケータが表示される。
+         ここでは
+         allowsBackgroundLocationUpdates = true
+         にしない。
+
+         Info.plistが正しく反映されていない状態で
+         trueにすると起動時クラッシュする可能性がある。
          */
+
+
         manager.showsBackgroundLocationIndicator =
             true
     }
@@ -64,6 +65,7 @@ final class BackgroundLocationKeeper:
             CLLocationManager
                 .locationServicesEnabled()
         else {
+
             print(
                 "[LocationKeeper] Location Services disabled"
             )
@@ -76,10 +78,6 @@ final class BackgroundLocationKeeper:
 
         case .notDetermined:
 
-            /*
-             最初は「使用中のみ」で十分。
-             必ずアプリが前面の時に呼ぶ。
-             */
             manager
                 .requestWhenInUseAuthorization()
 
@@ -111,11 +109,60 @@ final class BackgroundLocationKeeper:
             return
         }
 
+
+        /*
+         最終的にビルドされたInfo.plistに
+         location background modeが本当にあるか確認。
+         */
+
+        let modes =
+            Bundle.main
+                .object(
+                    forInfoDictionaryKey:
+                        "UIBackgroundModes"
+                )
+            as? [String]
+            ?? []
+
+
+        if modes.contains(
+            "location"
+        ) {
+
+            manager
+                .allowsBackgroundLocationUpdates =
+                true
+
+
+            print(
+                "[LocationKeeper] Background Location ENABLED"
+            )
+
+        } else {
+
+            /*
+             locationが入っていなくても
+             アプリ自体は落とさない。
+             */
+
+            manager
+                .allowsBackgroundLocationUpdates =
+                false
+
+
+            print(
+                "[LocationKeeper] WARNING: UIBackgroundModes/location not found"
+            )
+        }
+
+
         started =
             true
 
+
         manager
             .startUpdatingLocation()
+
 
         print(
             "[LocationKeeper] STARTED"
@@ -142,6 +189,7 @@ final class BackgroundLocationKeeper:
             started =
                 false
 
+
             print(
                 "[LocationKeeper] Permission denied"
             )
@@ -167,19 +215,18 @@ final class BackgroundLocationKeeper:
     ) {
 
         /*
-         位置そのものは今回使わない。
-
-         Core LocationのBackground executionを
-         維持するのが目的。
-
-         ついでにDiscord callbackを回す。
+         座標そのものは使わない。
+         保存もしない。
          */
+
+
         DiscordBridge
             .shared()
             .runCallbacks()
 
+
         print(
-            "[LocationKeeper] background heartbeat",
+            "[LocationKeeper] heartbeat",
             Date()
         )
     }
