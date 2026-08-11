@@ -33,21 +33,31 @@
     <!-- Apple Music -->
 
     <key>NSAppleMusicUsageDescription</key>
-    <string>Apple Musicの再生中の曲をDiscordのステータスに表示するために使用します。</string>
+
+    <string>
+        Apple Musicの再生中の曲をDiscordのステータスに表示するために使用します。
+    </string>
 
 
-    <!-- Background Location -->
+    <!-- Location When In Use -->
 
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Apple Musicの再生情報をバックグラウンドで同期するために使用します。位置情報そのものは保存・送信しません。</string>
+
+    <string>
+        Apple Musicの再生情報をバックグラウンドで同期するために使用します。位置情報そのものは保存・送信しません。
+    </string>
 
 
-    <!--
-        これが重要。
+    <!-- Location Always -->
 
-        Core Locationを使って
-        バックグラウンドでもアプリを実行させる。
-    -->
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+
+    <string>
+        Apple Musicの再生情報をバックグラウンドで継続して同期するために使用します。位置情報そのものは保存・送信しません。
+    </string>
+
+
+    <!-- Background Modes -->
 
     <key>UIBackgroundModes</key>
 
@@ -63,7 +73,7 @@
     <dict/>
 
 
-    <!-- iPhone / iPad arm64 -->
+    <!-- Device -->
 
     <key>UIRequiredDeviceCapabilities</key>
 
