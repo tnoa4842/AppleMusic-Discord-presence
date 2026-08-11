@@ -15,6 +15,17 @@ final class BackgroundLocationKeeper:
         CLLocationManager()
 
 
+    /*
+     iOS 17以降。
+
+     When In Useでも
+     Background Location Sessionを
+     明示的に維持する。
+     */
+    private var backgroundActivitySession:
+        CLBackgroundActivitySession?
+
+
     private var started =
         false
 
@@ -28,36 +39,52 @@ final class BackgroundLocationKeeper:
             self
 
 
+        /*
+         重要。
+
+         前回の3km精度はやめる。
+
+         Appleの推奨条件に合わせて
+         100m以上の精度にする。
+         */
         manager.desiredAccuracy =
-            kCLLocationAccuracyThreeKilometers
+            kCLLocationAccuracyHundredMeters
 
 
-        manager.distanceFilter =
-            kCLDistanceFilterNone
+        /*
+         distanceFilterは設定しない。
+
+         前回入れていた
+         kCLDistanceFilterNone も
+         今回は明示設定しない。
+         */
 
 
         manager.activityType =
             .other
 
 
-        manager.pausesLocationUpdatesAutomatically =
+        /*
+         iOSに自動停止させない。
+         */
+        manager
+            .pausesLocationUpdatesAutomatically =
             false
 
 
         /*
-         ここでは
-         allowsBackgroundLocationUpdates = true
-         にしない。
-
-         Info.plistが正しく反映されていない状態で
-         trueにすると起動時クラッシュする可能性がある。
+         Background Location使用中を
+         ユーザーに表示。
          */
-
-
-        manager.showsBackgroundLocationIndicator =
+        manager
+            .showsBackgroundLocationIndicator =
             true
     }
 
+
+    // MARK: =====================================
+    // MARK: Start
+    // MARK: =====================================
 
     func start() {
 
@@ -74,12 +101,25 @@ final class BackgroundLocationKeeper:
         }
 
 
+        print(
+            "[LocationKeeper] Authorization:",
+            manager.authorizationStatus.rawValue
+        )
+
+
         switch manager.authorizationStatus {
 
         case .notDetermined:
 
+            /*
+             今回はAlwaysを要求。
+
+             iOS側の仕様により
+             最初は「使用中」になる場合もある。
+             */
+
             manager
-                .requestWhenInUseAuthorization()
+                .requestAlwaysAuthorization()
 
 
         case .authorizedWhenInUse,
@@ -103,17 +143,16 @@ final class BackgroundLocationKeeper:
     }
 
 
+    // MARK: =====================================
+    // MARK: Start Updating
+    // MARK: =====================================
+
     private func startLocationUpdates() {
 
         guard !started else {
             return
         }
 
-
-        /*
-         最終的にビルドされたInfo.plistに
-         location background modeが本当にあるか確認。
-         */
 
         let modes =
             Bundle.main
@@ -125,55 +164,121 @@ final class BackgroundLocationKeeper:
             ?? []
 
 
-        if modes.contains(
-            "location"
-        ) {
-
-            manager
-                .allowsBackgroundLocationUpdates =
-                true
+        print(
+            "[LocationKeeper] UIBackgroundModes:",
+            modes
+        )
 
 
-            print(
-                "[LocationKeeper] Background Location ENABLED"
+        guard
+            modes.contains(
+                "location"
             )
-
-        } else {
+        else {
 
             /*
-             locationが入っていなくても
-             アプリ自体は落とさない。
+             allowsBackgroundLocationUpdates = true
+             をlocation無しで設定すると
+             iOSがアプリを終了させるため、
+             ここで止める。
              */
 
-            manager
-                .allowsBackgroundLocationUpdates =
-                false
-
-
             print(
-                "[LocationKeeper] WARNING: UIBackgroundModes/location not found"
+                "[LocationKeeper] ERROR: location background mode missing"
             )
+
+            return
         }
+
+
+        // MARK: Background Activity Session
+
+        if #available(
+            iOS 17.0,
+            *
+        ) {
+
+            /*
+             強参照を保持。
+
+             When In Useの状態でも
+             Background Activity Sessionを
+             継続させる。
+             */
+
+            if backgroundActivitySession ==
+                nil {
+
+                backgroundActivitySession =
+                    CLBackgroundActivitySession()
+
+
+                print(
+                    "[LocationKeeper] CLBackgroundActivitySession CREATED"
+                )
+            }
+        }
+
+
+        // MARK: Background updates
+
+        manager
+            .allowsBackgroundLocationUpdates =
+            true
+
+
+        /*
+         念のため改めて設定。
+         */
+
+        manager.desiredAccuracy =
+            kCLLocationAccuracyHundredMeters
+
+
+        manager
+            .pausesLocationUpdatesAutomatically =
+            false
+
+
+        manager
+            .showsBackgroundLocationIndicator =
+            true
+
+
+        /*
+         重要。
+
+         必ずアプリ前面時にここへ到達させる。
+         */
+
+        manager
+            .startUpdatingLocation()
 
 
         started =
             true
 
 
-        manager
-            .startUpdatingLocation()
-
-
         print(
-            "[LocationKeeper] STARTED"
+            "[LocationKeeper] CONTINUOUS LOCATION STARTED"
         )
     }
 
+
+    // MARK: =====================================
+    // MARK: Authorization Changed
+    // MARK: =====================================
 
     func locationManagerDidChangeAuthorization(
         _ manager:
             CLLocationManager
     ) {
+
+        print(
+            "[LocationKeeper] Authorization changed:",
+            manager.authorizationStatus.rawValue
+        )
+
 
         switch manager.authorizationStatus {
 
@@ -207,6 +312,10 @@ final class BackgroundLocationKeeper:
     }
 
 
+    // MARK: =====================================
+    // MARK: Location Updates
+    // MARK: =====================================
+
     func locationManager(
         _ manager:
             CLLocationManager,
@@ -215,22 +324,37 @@ final class BackgroundLocationKeeper:
     ) {
 
         /*
-         座標そのものは使わない。
-         保存もしない。
-         */
+         座標は保存・送信しない。
 
+         Discord SDK callbacksだけ
+         生存確認として回す。
+         */
 
         DiscordBridge
             .shared()
             .runCallbacks()
 
 
+        guard let location =
+            locations.last
+        else {
+
+            return
+        }
+
+
         print(
-            "[LocationKeeper] heartbeat",
-            Date()
+            "[LocationKeeper] HEARTBEAT",
+            Date(),
+            "accuracy:",
+            location.horizontalAccuracy
         )
     }
 
+
+    // MARK: =====================================
+    // MARK: Error
+    // MARK: =====================================
 
     func locationManager(
         _ manager:
@@ -240,11 +364,15 @@ final class BackgroundLocationKeeper:
     ) {
 
         print(
-            "[LocationKeeper] Error:",
-            error
+            "[LocationKeeper] ERROR:",
+            error.localizedDescription
         )
     }
 
+
+    // MARK: =====================================
+    // MARK: Pause / Resume
+    // MARK: =====================================
 
     func locationManagerDidPauseLocationUpdates(
         _ manager:
