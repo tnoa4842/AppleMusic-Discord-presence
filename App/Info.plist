@@ -1,36 +1,51 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC
+    "-//Apple//DTD PLIST 1.0//EN"
+    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 
 <plist version="1.0">
 
 <dict>
 
+    <!-- ====================================== -->
+    <!-- Bundle -->
+    <!-- ====================================== -->
+
     <key>CFBundleDevelopmentRegion</key>
     <string>$(DEVELOPMENT_LANGUAGE)</string>
+
 
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
 
+
     <key>CFBundleIdentifier</key>
     <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+
 
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
 
+
     <key>CFBundleName</key>
     <string>$(PRODUCT_NAME)</string>
+
 
     <key>CFBundlePackageType</key>
     <string>APPL</string>
 
+
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
+
 
     <key>CFBundleVersion</key>
     <string>1</string>
 
 
+    <!-- ====================================== -->
     <!-- Apple Music -->
+    <!-- ====================================== -->
 
     <key>NSAppleMusicUsageDescription</key>
 
@@ -39,7 +54,9 @@
     </string>
 
 
-    <!-- Location When In Use -->
+    <!-- ====================================== -->
+    <!-- Location: When In Use -->
+    <!-- ====================================== -->
 
     <key>NSLocationWhenInUseUsageDescription</key>
 
@@ -48,7 +65,9 @@
     </string>
 
 
-    <!-- Location Always -->
+    <!-- ====================================== -->
+    <!-- Location: Always -->
+    <!-- ====================================== -->
 
     <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 
@@ -57,28 +76,38 @@
     </string>
 
 
+    <!-- ====================================== -->
     <!-- Background Modes -->
+    <!-- ====================================== -->
 
     <key>UIBackgroundModes</key>
 
     <array>
+
         <string>location</string>
+
     </array>
 
 
+    <!-- ====================================== -->
     <!-- Launch Screen -->
+    <!-- ====================================== -->
 
     <key>UILaunchScreen</key>
 
     <dict/>
 
 
-    <!-- Device -->
+    <!-- ====================================== -->
+    <!-- Required Device -->
+    <!-- ====================================== -->
 
     <key>UIRequiredDeviceCapabilities</key>
 
     <array>
+
         <string>arm64</string>
+
     </array>
 
 </dict>
