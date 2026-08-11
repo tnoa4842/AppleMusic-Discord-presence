@@ -41,8 +41,248 @@ jobs:
             PRODUCT_BUNDLE_IDENTIFIER="${BUNDLE_ID}" \
             build
 
+      - name: Inject required Info.plist keys
+        run: |
+          APP_PLIST="build/Build/Products/Release-iphoneos/AppleMusicDiscordPresence.app/Info.plist"
+
+          if [ ! -f "$APP_PLIST" ]; then
+            echo "ERROR: App Info.plist not found:"
+            echo "$APP_PLIST"
+            exit 1
+          fi
+
+          python3 <<'PY'
+          import plistlib
+          from pathlib import Path
+
+          path = Path(
+              "build/Build/Products/Release-iphoneos/"
+              "AppleMusicDiscordPresence.app/Info.plist"
+          )
+
+          with path.open("rb") as f:
+              plist = plistlib.load(f)
+
+          plist["NSAppleMusicUsageDescription"] = (
+              "Apple Musicの再生中の曲をDiscordのステータスに"
+              "表示するために使用します。"
+          )
+
+          plist["NSLocationWhenInUseUsageDescription"] = (
+              "Apple Musicの再生情報をバックグラウンドで"
+              "同期するために使用します。"
+              "位置情報そのものは保存・送信しません。"
+          )
+
+          plist["NSLocationAlwaysAndWhenInUseUsageDescription"] = (
+              "Apple Musicの再生情報をバックグラウンドで"
+              "継続して同期するために使用します。"
+              "位置情報そのものは保存・送信しません。"
+          )
+
+          background_modes = plist.get(
+              "UIBackgroundModes",
+              []
+          )
+
+          if not isinstance(background_modes, list):
+              background_modes = []
+
+          if "location" not in background_modes:
+              background_modes.append("location")
+
+          plist["UIBackgroundModes"] = background_modes
+
+          with path.open("wb") as f:
+              plistlib.dump(
+                  plist,
+                  f,
+                  fmt=plistlib.FMT_BINARY,
+                  sort_keys=False
+              )
+
+          print("Injected Info.plist keys successfully.")
+          PY
+
+          echo ""
+          echo "===== FINAL APP Info.plist ====="
+
+          plutil -p "$APP_PLIST"
+
+          echo ""
+          echo "===== VERIFY REQUIRED KEYS ====="
+
+          python3 <<'PY'
+          import plistlib
+          import sys
+          from pathlib import Path
+
+          path = Path(
+              "build/Build/Products/Release-iphoneos/"
+              "AppleMusicDiscordPresence.app/Info.plist"
+          )
+
+          with path.open("rb") as f:
+              plist = plistlib.load(f)
+
+          required = [
+              "NSAppleMusicUsageDescription",
+              "NSLocationWhenInUseUsageDescription",
+              "NSLocationAlwaysAndWhenInUseUsageDescription",
+              "UIBackgroundModes",
+          ]
+
+          missing = []
+
+          for key in required:
+              if key not in plist:
+                  missing.append(key)
+
+          modes = plist.get("UIBackgroundModes", [])
+
+          if "location" not in modes:
+              missing.append(
+                  "UIBackgroundModes/location"
+              )
+
+          if missing:
+              print("ERROR: Missing required Info.plist values:")
+              for item in missing:
+                  print(" -", item)
+
+              sys.exit(1)
+
+          print("App Info.plist verification PASSED")
+          print(
+              "NSAppleMusicUsageDescription:",
+              plist["NSAppleMusicUsageDescription"]
+          )
+          print(
+              "NSLocationWhenInUseUsageDescription:",
+              plist["NSLocationWhenInUseUsageDescription"]
+          )
+          print(
+              "NSLocationAlwaysAndWhenInUseUsageDescription:",
+              plist[
+                  "NSLocationAlwaysAndWhenInUseUsageDescription"
+              ]
+          )
+          print(
+              "UIBackgroundModes:",
+              plist["UIBackgroundModes"]
+          )
+          PY
+
       - name: Package IPA
         run: bash scripts/make_unsigned_ipa.sh
+
+      - name: Verify packaged IPA
+        run: |
+          if [ ! -f "AppleMusicDiscordPresence-unsigned.ipa" ]; then
+            echo "ERROR: IPA was not created"
+            exit 1
+          fi
+
+          rm -rf ipa_verify
+          mkdir -p ipa_verify
+
+          unzip -q \
+            AppleMusicDiscordPresence-unsigned.ipa \
+            -d ipa_verify
+
+          IPA_PLIST="$(
+            find \
+              ipa_verify/Payload \
+              -maxdepth 2 \
+              -name Info.plist \
+              -print \
+              -quit
+          )"
+
+          if [ -z "$IPA_PLIST" ]; then
+            echo "ERROR: Info.plist not found inside IPA"
+            exit 1
+          fi
+
+          echo "IPA Info.plist:"
+          echo "$IPA_PLIST"
+
+          echo ""
+          echo "===== PACKAGED IPA Info.plist ====="
+
+          plutil -p "$IPA_PLIST"
+
+          echo ""
+          echo "===== VERIFY PACKAGED IPA ====="
+
+          IPA_PLIST="$IPA_PLIST" python3 <<'PY'
+          import os
+          import plistlib
+          import sys
+          from pathlib import Path
+
+          path = Path(
+              os.environ["IPA_PLIST"]
+          )
+
+          with path.open("rb") as f:
+              plist = plistlib.load(f)
+
+          required = [
+              "NSAppleMusicUsageDescription",
+              "NSLocationWhenInUseUsageDescription",
+              "NSLocationAlwaysAndWhenInUseUsageDescription",
+              "UIBackgroundModes",
+          ]
+
+          missing = []
+
+          for key in required:
+              if key not in plist:
+                  missing.append(key)
+
+          modes = plist.get(
+              "UIBackgroundModes",
+              []
+          )
+
+          if "location" not in modes:
+              missing.append(
+                  "UIBackgroundModes/location"
+              )
+
+          if missing:
+              print(
+                  "ERROR: Packaged IPA lost required values:"
+              )
+
+              for item in missing:
+                  print(" -", item)
+
+              sys.exit(1)
+
+          print("")
+          print("===================================")
+          print("PACKAGED IPA VERIFICATION PASSED")
+          print("===================================")
+
+          print(
+              "NSAppleMusicUsageDescription: OK"
+          )
+
+          print(
+              "NSLocationWhenInUseUsageDescription: OK"
+          )
+
+          print(
+              "NSLocationAlwaysAndWhenInUseUsageDescription: OK"
+          )
+
+          print(
+              "UIBackgroundModes:",
+              plist["UIBackgroundModes"]
+          )
+          PY
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
